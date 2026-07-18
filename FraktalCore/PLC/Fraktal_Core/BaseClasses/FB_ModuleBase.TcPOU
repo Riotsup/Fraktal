@@ -1,0 +1,479 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ModuleBase" Id="{8b301a4b-b494-41a3-83ca-dbb612992d12}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §2.2 / §6.1 — the PLCopen lifecycle written ONCE (template method).
+// A concrete type EXTENDS this base, declares its Command/HAL/ParCfg members, and
+// overrides only _M_Dispatch (+ optionally hooks and recipe transaction methods).
+// Edge handling, ExecState mapping, Execute-drop reset, ErrorID publication, and
+// abort routing are inherited. Conformance rows T1/T4 (Core §5.7) are satisfied here
+// and proven once in FB_Base_Tests.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK ABSTRACT FB_ModuleBase IMPLEMENTS I_Module
+VAR_INPUT
+    Execute : BOOL;    // rising edge starts the command (Core §6.1)
+    Abort   : BOOL;    // requests a controlled abort
+END_VAR
+VAR_OUTPUT
+    Busy    : BOOL;
+    Done    : BOOL;
+    Error   : BOOL;
+    Aborted : BOOL;
+    ErrorID : DWORD;   // = TO_DWORD(first-out ReasonCode), Core §8.8
+END_VAR
+VAR_OUTPUT
+    Status : ST_ModuleStatus;   // Core §3.10(a')/§6.9(a) — the OPC UA data mirror
+    Timing : ST_ModuleTiming;   // Core §8.11.4(a) — per-command timing, captured here once
+    Nameplate   : ST_Nameplate;  // §3.10.1 asset identity (set at Setup; empty = none)
+    Catalog     : ARRAY[1..PL_Fraktal.MAX_CMD_CATALOG] OF ST_CommandInfo;  // §7.6.1 published command list
+    CatalogCount: INT;
+    Safety       : ST_SafetyStatus;       // §9 optional read-only safety facet (Present=FALSE if absent)
+    ControlPower : ST_ControlPowerStatus; // §9 optional control/power facet
+END_VAR
+VAR
+    _name  : STRING(80);
+    _exec  : E_ExecState := E_ExecState.READY;
+    _step  : INT;
+    _diag  : ST_Diagnostic;
+    _rTrig : R_TRIG;
+    _abortErrTrig : R_TRIG;
+    _initialized : BOOL;
+    _prevExec   : E_ExecState;
+    _manualCmd  : DINT;          // §7.6.1 pending manual command value (0 = none)
+    _manualReq  : BOOL;
+    _manualActive : BOOL;        // one-shot manual request owns Execute until terminal state
+    _cmdArmed   : BOOL;          // terminal state came from a command; gates the §6.1 reset
+    _cmdId      : DINT;          // set by _M_TagCommand (one line per type, §8.11.4(a))
+    _cmdLabel   : STRING(120);
+    _tCmdStart  : DWORD;         // monotonic ms at command start (TC3 §8.11)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// FB body just runs the lifecycle; parents may call the instance or Cyclic() (I_Module)
+Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Cyclic" Id="{55e1a9be-c565-4b0c-ab2b-978ee05c7de5}">
+      <Declaration><![CDATA[// Core §6.1 — edge -> hooks -> dispatch -> map -> Execute-drop reset
+METHOD Cyclic : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Execute-drop reset (Core §6.1): a COMMAND-produced terminal state published in
+// an earlier scan plus Execute low resets to READY BEFORE this scan's mapping, so
+// the outputs go idle in the same call. A completion later this scan still maps
+// its one-cycle DONE/ERROR/ABORTED pulse first (PLCopen). Faults raised OUTSIDE a
+// command (recipe/config at Setup, cyclic condition monitors) latch (§3.8/§8.3):
+// Execute was never high, so the handshake reset does not consume them.
+IF (NOT Execute) AND _cmdArmed
+AND ((_exec = E_ExecState.DONE) OR (_exec = E_ExecState.ERROR) OR (_exec = E_ExecState.ABORTED)) THEN
+    _exec := E_ExecState.READY;
+    _cmdArmed := FALSE;
+END_IF
+
+_rTrig(CLK := Execute);
+// A fresh command edge may also RETRY from a latched non-command fault: the edge
+// clears the diagnostic and re-runs validation, which re-faults if the cause remains.
+IF _rTrig.Q AND ((_exec = E_ExecState.READY)
+    OR ((_exec = E_ExecState.ERROR) AND NOT _cmdArmed)) THEN
+    _exec := E_ExecState.BUSY;      // ParCmd of the concrete type is latched on this edge
+    _cmdArmed := TRUE;
+    _step := 10;
+    _M_ClearDiag();
+    _tCmdStart := TIME_TO_DWORD(TIME());          // §8.11.4(a) command-timing start
+END_IF
+
+IF NOT _initialized THEN
+    _initialized := TRUE;
+    OnInit();                        // Core §3.14 one-shot for every module tier
+END_IF
+OnCyclic();                          // Core §3.14 hook: background management, no outputs
+
+IF Abort AND (_exec = E_ExecState.BUSY) THEN
+    OnAbort();                       // Core §3.14 hook: device-safe abort action
+END_IF
+_abortErrTrig(CLK := Abort AND (_exec = E_ExecState.ERROR));
+IF _abortErrTrig.Q THEN
+    OnAbortInError();                // distinct recovery hook; ERROR remains latched
+END_IF
+
+IF _exec = E_ExecState.BUSY THEN
+    _M_Dispatch();                   // the ONLY thing a type must write (Core §2.2)
+END_IF
+
+// §8.11.4(a) — close the command's timing row on leaving BUSY (DONE/ERROR/ABORTED)
+IF (_prevExec = E_ExecState.BUSY) AND (_exec <> E_ExecState.BUSY) THEN
+    _M_RecordCmdTiming(TIME_TO_DWORD(TIME()) - _tCmdStart);   // wrap-safe diff (TC3 §8.11)
+END_IF
+_prevExec := _exec;
+
+Busy    := (_exec = E_ExecState.BUSY);
+Done    := (_exec = E_ExecState.DONE);
+Error   := (_exec = E_ExecState.ERROR);
+Aborted := (_exec = E_ExecState.ABORTED);
+ErrorID := TO_DWORD(_diag.ReasonCode);
+
+// §6.9(a)/§3.10(a') — refresh the data mirror: properties are invisible to the
+// OPC UA namespace, so everything the HMI binds is published here as DATA
+Status.ModuleType  := ModuleType;
+Status.State       := _exec;
+Status.FaultActive := (_exec = E_ExecState.ERROR);
+Status.Diagnostic  := _diag;
+_M_PublishStatus();              // tier-specific overlay after the common mirror is final
+
+// A manual command is a one-shot use of the same PLCopen lifecycle. Keep the
+// terminal state visible for this scan, then drop Execute for next-scan reset.
+IF _manualActive AND ((_exec = E_ExecState.DONE) OR (_exec = E_ExecState.ERROR) OR (_exec = E_ExecState.ABORTED)) THEN
+    Execute := FALSE;
+    _manualActive := FALSE;
+END_IF
+Cyclic := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="GetFaultSummary" Id="{9566a5e3-ba25-4315-8418-3442cda23dcf}">
+      <Declaration><![CDATA[// Core §8.2/§6.9 — this node's first-out (composites override via rollup in the EM base)
+METHOD GetFaultSummary : ST_Diagnostic]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[GetFaultSummary := _diag;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnAbort" Id="{04322c07-87f1-40ea-bc1a-5832b3217887}">
+      <Declaration><![CDATA[// Core §3.14 hook — optional override: device-safe abort action.
+// Override contract (Core §3.14.2): call SUPER^.OnAbort() FIRST and keep its return.
+METHOD PROTECTED OnAbort : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_exec := E_ExecState.ABORTED;
+_step := 0;
+OnAbort := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnAbortInError" Id="{89520f20-9f44-4fc4-bc6c-a17bf4f6fa8f}">
+      <Declaration><![CDATA[// Core §3.14 — optional error-state abort/recovery action. ERROR remains latched
+// until Execute drops. Overrides call SUPER^.OnAbortInError() first.
+METHOD PROTECTED OnAbortInError : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnAbortInError := 0;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnInit" Id="{65ff6da7-cd28-41e5-9897-e1d3c337a9f6}">
+      <Declaration><![CDATA[// Core §3.14 — first operational scan, after Setup/recipe load.
+// Overrides call SUPER^.OnInit() first and propagate its return.
+METHOD PROTECTED OnInit : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnInit := 0;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{48bc56d4-8c06-49f6-bf88-b38859740000}">
+      <Declaration><![CDATA[// Core §3.14 hook — optional override: per-scan background management (idempotent,
+// no direct outputs). Override contract: call SUPER^.OnCyclic() FIRST, keep return.
+METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{db5aea26-fad0-45c3-85d6-1c319b06c11c}">
+      <Declaration><![CDATA[// Core §3.8 — types with ParCfg load into staging here.
+METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PrepareRecipe := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{41e0d6b5-22db-4322-a3fb-6988fedfb14a}">
+      <Declaration><![CDATA[METHOD CommitRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{ea618be8-2d71-4f2b-bbf6-0764ca27fefd}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[]]></ST></Implementation>
+    </Method>
+    <Method Name="ExecuteCommand" Id="{f51ae79d-e26d-48dc-acb5-d17e651f22ea}">
+      <Declaration><![CDATA[// Core §3.2 — generic DINT command path; the catalog is the supported set.
+// Concrete dispatch consumes the inherited manual request, so typed/generic/HMI
+// paths share validation, timing, interlocks, and the PLCopen lifecycle.
+METHOD ExecuteCommand : BOOL
+VAR_INPUT
+    Command : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ExecuteCommand := ManualCommand(Value := Command);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="AbortCommand" Id="{245e845f-096c-4671-ac56-5146b4cbe16f}">
+      <Declaration><![CDATA[// Core §3.2/§6.1 — method form of the inherited abort route.
+METHOD AbortCommand : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[AbortCommand := FALSE;
+IF _exec <> E_ExecState.BUSY THEN
+    RETURN;
+END_IF
+OnAbort();
+_exec := E_ExecState.ABORTED;
+_step := 0;
+AbortCommand := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ClearDiag" Id="{31f29f49-3b1c-41d8-8d5b-7a55e4b57ade}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_ClearDiag]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_diag.ReasonCode  := E_Reason.NONE;
+_diag.Description := '';
+_diag.IoTag := '';
+_diag.IoAddress := '';]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Complete" Id="{06af2579-f543-4df4-8570-1a7ac93dd125}">
+      <Declaration><![CDATA[// Core §6.1 — successful completion (the concrete type publishes OutCmd before calling)
+METHOD PROTECTED _M_Complete]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_exec := E_ExecState.DONE;
+_step := 0;
+_M_ClearDiag();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{9ea9e054-f35b-4138-af00-cab2dd9c761f}">
+      <Declaration><![CDATA[// Core §2.2 — THE extension point: the type's CASE _step device logic,
+// calling _M_Fault / _M_FaultDiag / _M_Complete.
+METHOD PROTECTED ABSTRACT _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Fault" Id="{5fc14cdf-5d54-4103-9e66-ade4c511161a}">
+      <Declaration><![CDATA[// Core §6.9 — stamp the first-out reason and hold in ERROR
+METHOD PROTECTED _M_Fault
+VAR_INPUT
+    Reason : E_Reason;
+    Text   : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_diag.ReasonCode  := Reason;
+_diag.Description := Text;
+_diag.SourcePath  := _name;
+_diag.IoTag       := '';
+_diag.IoAddress   := '';
+_diag.Severity    := E_Severity.MED;
+_diag.Category    := E_Category.PROCESS;
+_diag.Since       := F_Now();       // synchronized clock (Core §2.7)
+_exec := E_ExecState.ERROR;
+_step := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_FaultDiag" Id="{03522184-ad94-4517-a6d7-9dfc7a3da385}">
+      <Declaration><![CDATA[// Core §8.2 — adopt a ready-made diagnostic verbatim (rollup / connector reason)
+METHOD PROTECTED _M_FaultDiag
+VAR_INPUT
+    Diag : ST_Diagnostic;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_diag := Diag;
+_exec := E_ExecState.ERROR;
+_step := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetName" Id="{6ced507f-831f-4313-88cb-22ca9e2b6dab}">
+      <Declaration><![CDATA[// called from the concrete type's Setup (Core §3.11); Name = browse path (Core §4.8)
+METHOD PROTECTED _M_SetName
+VAR_INPUT
+    Name : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_name := Name;
+Status.Name := Name;   // mirror (§3.10(a'))]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_RecordCmdTiming" Id="{38205e3a-ffbf-41f7-86e4-499454cd2653}">
+      <Declaration><![CDATA[// Core §8.11.4(a) — fold the finished command into its timing row (find-or-allocate)
+METHOD PRIVATE _M_RecordCmdTiming
+VAR_INPUT
+    DurMs : DWORD;
+END_VAR
+VAR
+    i, slot : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Timing.LastCmdTime := DWORD_TO_TIME(DurMs);
+slot := 0;
+FOR i := 1 TO PL_Fraktal.MAX_CMD_STATS DO
+    IF (Timing.Rows[i].Count > 0) AND (Timing.Rows[i].Id = _cmdId) THEN
+        slot := i;
+        EXIT;
+    ELSIF (slot = 0) AND (Timing.Rows[i].Count = 0) THEN
+        slot := i;
+    END_IF
+END_FOR
+IF slot = 0 THEN
+    Timing.Truncated := TRUE;        // fixed array, never grown at runtime (§8.11.4(e))
+ELSE
+    Timing.Rows[slot].Id    := _cmdId;
+    Timing.Rows[slot].Label := _cmdLabel;
+    F_TimingUpdate(Row := Timing.Rows[slot], DurMs := DurMs);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TagCommand" Id="{ece46cea-23d0-43c2-813e-8667a9d51bcb}">
+      <Declaration><![CDATA[// Core §8.11.4(a) — the ONE line a type adds for a per-command breakdown:
+//   _M_TagCommand(TO_DINT(Command), '<label>');   (idempotent; scaffold includes it)
+METHOD PROTECTED _M_TagCommand
+VAR_INPUT
+    Id    : DINT;
+    Label : STRING(120);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_cmdId    := Id;
+    _cmdLabel := Label;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetPresentation" Id="{e66e1a1c-bccd-4d2b-b10f-04682c152476}">
+      <Declaration><![CDATA[// Optional localizable HMI metadata; keys only, never operator prose.
+METHOD PROTECTED _M_SetPresentation
+VAR_INPUT
+    DisplayNameKey : STRING(160);
+    DescriptionKey : STRING(160);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.DisplayNameKey := DisplayNameKey;
+Status.DescriptionKey := DescriptionKey;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_FaultN" Id="{13380fe6-9f35-461a-9c7d-07489905385d}">
+      <Declaration><![CDATA[// Core §8.8 band-extensibility: fault with a per-type band code (DINT constant).
+// E_Reason is deliberately non-strict, so the numeric assignment is contract, not a cast trick.
+METHOD PROTECTED _M_FaultN
+VAR_INPUT
+    Code : DINT;          // registered band code (Core §8.8 registry)
+    Text : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_diag.ReasonCode  := Code;    // non-strict enum accepts the band value (Core §8.8)
+_diag.Description := Text;
+_diag.SourcePath  := _name;
+_diag.IoTag       := '';
+_diag.IoAddress   := '';
+_diag.Severity    := E_Severity.MED;
+_diag.Category    := E_Category.PROCESS;
+_diag.Since       := F_Now();
+_exec := E_ExecState.ERROR;
+_step := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_FaultIoN" Id="{882e3bc6-6ae0-4543-9938-fbd2f3f464fc}">
+      <Declaration><![CDATA[// Type-band fault with the implicated schematic tag and terminal location.
+METHOD PROTECTED _M_FaultIoN
+VAR_INPUT
+    Code : DINT;
+    Text : STRING(255);
+    IoTag : STRING(80);
+    IoAddress : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_FaultN(Code := Code, Text := Text);
+_diag.IoTag := IoTag;
+_diag.IoAddress := IoAddress;]]></ST></Implementation>
+    </Method>
+    <Property Name="FaultActive" Id="{38e2aa5f-3ac0-4eb3-9a1e-ef7a1cb767bc}">
+      <Declaration><![CDATA[PROPERTY FaultActive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{529df577-22bf-4742-bdf3-062d51091f95}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[FaultActive := (_exec = E_ExecState.ERROR);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ModuleType" Id="{91a61863-2369-4ad6-a29c-bc990c2122a0}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{dbd948ed-c4ad-40d7-8a31-4b0ed20d2b53}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModuleType := E_ModuleType.NONE;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Name" Id="{c24d6397-401c-4963-8ab8-f563df940e48}">
+      <Declaration><![CDATA[PROPERTY Name : STRING(80)]]></Declaration>
+      <Get Name="Get" Id="{eb191fec-5268-43d8-8bcb-bfa73048b8de}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Name := _name;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="State" Id="{a1edbb0a-709d-4cde-ad03-289d669b1035}">
+      <Declaration><![CDATA[PROPERTY State : E_ExecState]]></Declaration>
+      <Get Name="Get" Id="{5853c615-2dce-4697-b780-9ecc31157145}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[State := _exec;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="_M_PublishCommand" Id="{29d0f7b0-91bb-4101-9d86-a1adf0963241}">
+      <Declaration><![CDATA[// §7.6.1 — register one manual command in the catalog (call in the module's init).
+// Idempotent by Value: re-publishing a Value updates its label.
+METHOD PROTECTED _M_PublishCommand
+VAR_INPUT
+    Value : DINT;
+    Label : STRING(120);
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[FOR i := 1 TO CatalogCount DO
+    IF Catalog[i].Value = Value THEN
+        Catalog[i].Label := Label;
+        RETURN;
+    END_IF
+END_FOR
+IF CatalogCount >= PL_Fraktal.MAX_CMD_CATALOG THEN
+    RETURN;
+END_IF
+CatalogCount := CatalogCount + 1;
+Catalog[CatalogCount].Value := Value;
+Catalog[CatalogCount].Label := Label;]]></ST></Implementation>
+    </Method>
+    <Method Name="ManualCommand" Id="{0208fca9-aa4b-4e28-85ae-b94b8780ebca}">
+      <Declaration><![CDATA[// §7.6.1 — apply a manual command, routed THROUGH the normal command surface so
+// interlocks/first-out/timing still apply (§3.2). The owning Unit is the single
+// gate: it calls this ONLY after verifying MANUAL mode (§3.4) + MANUAL access
+// (§7.7) and logs the §8.3 event. §7.6 Release<Function> is enforced by the
+// module's own _M_Dispatch. Concrete modules read _manualReq/_manualCmd there.
+METHOD ManualCommand : BOOL
+VAR_INPUT
+    Value : DINT;
+END_VAR
+VAR
+    i : INT;
+    supported : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ManualCommand := FALSE;
+FOR i := 1 TO CatalogCount DO
+    IF Catalog[i].Value = Value THEN
+        supported := TRUE;
+        EXIT;
+    END_IF
+END_FOR
+IF NOT supported THEN
+    RETURN;                              // reject values outside the published set (§5.6)
+END_IF
+IF (_exec <> E_ExecState.READY) OR Execute OR _manualActive THEN
+    RETURN;
+END_IF
+_manualCmd := Value;
+_manualReq := TRUE;                       // consumed by the module's _M_Dispatch
+_manualActive := TRUE;
+Execute := TRUE;                          // rising edge enters the inherited lifecycle
+ManualCommand := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{8f1ef260-b1f4-49fd-8c9a-41554cb2e6db}">
+      <Declaration><![CDATA[// Called after the common Status mirror refresh. Derived tiers may overlay data.
+METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    </Method>
+    <Method Name="SetNameplate" Id="{2b4ef7dc-3acc-4a5f-bbea-5d8ab99fe999}">
+      <Declaration><![CDATA[// §3.10.1 — set the module's asset identity once, at Setup. Not HMI-writable;
+// identity, not configuration (deliberately outside §3.8/§7.7).
+METHOD SetNameplate : BOOL
+VAR_INPUT
+    Plate : ST_Nameplate;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Nameplate := Plate;
+SetNameplate := TRUE;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

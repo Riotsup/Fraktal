@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_PowerState" Id="{819f8aa9-794b-4cc6-aaa5-6b1f977dec82}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_PowerState : (OFF := 0, ENERGIZING := 1, ON := 2,
+    DEENERGIZING := 3, TRIPPED := 4, FAULT := 5) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

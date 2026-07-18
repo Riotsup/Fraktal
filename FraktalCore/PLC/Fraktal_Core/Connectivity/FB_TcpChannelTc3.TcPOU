@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_TcpChannelTc3" Id="{119475c3-2c7f-4f95-9ed2-50ad9e793352}" SpecialFunc="None">
+    <Declaration><![CDATA[// [TC3] SKELETON — I_ByteChannel over Tc2_TcpIp (TF6310), TC3 §3.15. Structure and
+// building blocks named; bodies are TODO for the integrator, who MUST verify FB
+// signatures, the TF6310 license, and the TcpIpServer prerequisite against Beckhoff
+// InfoSys for the pinned TwinCAT version. Until implemented, State() = CLOSED.
+FUNCTION_BLOCK FB_TcpChannelTc3 IMPLEMENTS I_ByteChannel
+VAR
+    // Tc2_TcpIp building blocks (uncomment when the library is referenced):
+    // _connect : FB_SocketConnect;
+    // _close   : FB_SocketClose;
+    // _send    : FB_SocketSend;
+    // _recv    : FB_SocketReceive;
+    _state : E_ByteChannelState;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[; // driven via Tick]]></ST>
+    </Implementation>
+    <Method Name="Open" Id="{dd73122e-9f47-488a-8d7a-e3552d017197}">
+      <Declaration><![CDATA[METHOD Open : BOOL
+VAR_INPUT
+    Host : STRING(80);
+    Port : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator): kick _connect(sRemoteHost := Host, nRemotePort := Port, ...);
+// _state := OPENING; completion observed in Tick(). Verify param names (InfoSys).
+Open := FALSE;   // skeleton]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Close" Id="{c3f6867b-0349-48c8-bdd6-fb99d4bf29d1}">
+      <Declaration><![CDATA[METHOD Close : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator): _close(hSocket := ...); _state := CLOSED;
+Close := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Send" Id="{07d89c06-2479-4137-9ea7-168bd3c6816c}">
+      <Declaration><![CDATA[METHOD Send : BOOL
+VAR_INPUT
+    Text : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator): _send(hSocket := ..., pSrc := ADR(Text), cbLen := LEN(Text));
+Send := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Poll" Id="{d13c84ab-dc0b-4e60-849d-3113e0b27327}">
+      <Declaration><![CDATA[METHOD Poll : INT
+VAR_IN_OUT
+    Buffer : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator): _recv into a byte buffer, append printable chars to Buffer.
+Poll := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="State" Id="{ee9b57df-69e2-4a2c-b8bc-1eef38ec4aa7}">
+      <Declaration><![CDATA[METHOD State : E_ByteChannelState]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State := _state;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Tick" Id="{720cfab0-d52f-44cc-9a25-b78f14f11b30}">
+      <Declaration><![CDATA[METHOD Tick : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator): advance _connect/_send/_recv state machines; map completion/
+// error onto _state (OPENING -> OPEN on connect done; any bErr -> FAULT).
+Tick := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

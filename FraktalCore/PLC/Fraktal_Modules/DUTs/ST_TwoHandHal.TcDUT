@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TwoHandHal" Id="{024f827a-dd51-4cec-90c1-2b0276dc0952}">
+    <Declaration><![CDATA[// Raw button status plus the certified safety application's evaluated result.
+// SafeActive is never calculated by the standard PLC in a real machine.
+TYPE ST_TwoHandHal :
+STRUCT
+    LeftPressed     : BOOL;
+    RightPressed    : BOOL;
+    SafeActive      : BOOL;
+    FieldbusHealthy : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

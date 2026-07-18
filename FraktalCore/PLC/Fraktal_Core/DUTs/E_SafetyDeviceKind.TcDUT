@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_SafetyDeviceKind" Id="{d60a18dc-660b-4d56-9950-ed7a74731fc0}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_SafetyDeviceKind : (NONE := 0, ESTOP := 1, GUARD_DOOR := 2,
+    LIGHT_CURTAIN := 3, SAFETY_SCANNER := 4, SAFETY_MAT := 5,
+    ENABLE_SWITCH := 6, SAFETY_VALVE := 7, SAFE_DRIVE := 8,
+    SAFETY_SENSOR := 9, OTHER := 10, TWO_HAND_CONTROL := 11) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

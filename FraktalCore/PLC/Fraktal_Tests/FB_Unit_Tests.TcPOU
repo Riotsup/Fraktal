@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Unit_Tests" Id="{ccffa0fb-4bf8-45f8-837f-baf7462dfa55}" SpecialFunc="None">
+    <Declaration><![CDATA[// FB_UnitBase suite: mode rejection, run-as-command, stall key, wait-class
+// derived Starved, cycle publication, mode change = immediate software abort by default.
+FUNCTION_BLOCK FB_Unit_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _u : FB_ProbeUnit;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Unit_run_stall_classes_and_cycle();
+Unit_mode_change_is_estop_by_default();]]></ST>
+    </Implementation>
+    <Method Name="Unit_run_stall_classes_and_cycle" Id="{14ae51c7-c760-4004-9fdd-4ede7d4f00ff}">
+      <Declaration><![CDATA[METHOD Unit_run_stall_classes_and_cycle]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Unit_run_stall_classes_and_cycle');
+IF NOT _w THEN
+    _u.Setup('Test.Unit');
+    _w := TRUE;
+END_IF
+AssertFalse(Condition := _u.SetMode(Mode := E_Mode.CALIBRATION),
+            Message := 'unsupported mode rejected gracefully (3.4/3.7)');
+AssertTrue(Condition := _u.Start(), Message := 'Start issues the run command (6 intro)');
+_u();                                         // edge -> BUSY, step 100 set
+_u();                                         // stall guard (T#0S) fires -> pending
+AssertTrue(Condition := _u.Busy, Message := 'running');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.STEP_STALLED),
+                   Actual   := TO_DWORD(_u.Pending.ReasonCode),
+                   Message  := 'stall is a PENDING reason, not a fault (6.9)');
+AssertEquals_STRING(Expected := 'std.diagnostic.stepStalled',
+                    Actual   := _u.Pending.Description,
+                    Message  := 'stall publishes a stable key; CurrentStep carries context');
+AssertFalse(Condition := _u.Error, Message := 'no fault from a stall');
+_u.SimA := TRUE;
+_u();                                         // -> step 200 (WAIT_UPSTREAM)
+_u();
+AssertTrue(Condition := _u.Starved,
+           Message := 'Starved derived from the step wait class (8.11.4f/8.11.3)');
+_u.Stop();
+_u.SimB := TRUE;
+_u();                                         // -> step 30
+_u();                                         // EndOfCycle: publish + complete + release
+_u();                                         // reset -> READY
+AssertFalse(Condition := _u.Busy, Message := 'stopped after cycle (3.3)');
+AssertEquals_INT(Expected := 2, Actual := _u.Profiler.LastCycle.NSteps,
+                 Message := 'cycle profile published with both steps (8.11.4b)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Unit_mode_change_is_estop_by_default" Id="{7c014f2f-fda2-494e-b29c-1fc8224ac0ab}">
+      <Declaration><![CDATA[METHOD Unit_mode_change_is_estop_by_default]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Unit_mode_change_is_estop_by_default');
+_u.SimA := FALSE;
+_u.SimB := FALSE;
+AssertTrue(Condition := _u.Start(), Message := 're-start');
+_u();
+AssertTrue(Condition := _u.Busy, Message := 'running again');
+AssertTrue(Condition := _u.SetMode(Mode := E_Mode.MANUAL), Message := 'mode request accepted (pending)');
+_u();                                         // OnModeExit=0 -> OnAbort (non-safety software abort, 3.14.4)
+_u();                                         // release run command, reset
+_u();                                         // commit mode
+AssertFalse(Condition := _u.Busy, Message := 'chain cancelled by the mode change');
+AssertEquals_DINT(Expected := TO_DINT(E_Mode.MANUAL),
+                  Actual   := TO_DINT(_u.ModeActive),
+                  Message  := 'mode committed after leaving BUSY (3.14.4)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

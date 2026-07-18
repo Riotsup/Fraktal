@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_IoTopologyPublisher" Id="{c9ef2341-e487-43cd-96ba-1672dcad7e7b}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §10.5.1 infrastructure service. Owns the reusable bounded-table,
+// validation, health and diagnostic-join algorithms; project code supplies only
+// physical topology metadata and live values. This is not a module tier.
+FUNCTION_BLOCK FB_IoTopologyPublisher
+VAR
+    _data : REFERENCE TO ST_FieldbusTopology;
+    _attached : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="Setup" Id="{77682682-afae-4ce9-b950-39b76afe78ad}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    DataRef : REFERENCE TO ST_FieldbusTopology;
+    ResetData : BOOL;
+END_VAR
+VAR
+    n, c : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_data REF= DataRef;
+_attached := __ISVALIDREF(_data);
+IF _attached AND ResetData THEN
+    _data.NodeCount := 0;
+    _data.MappingValid := TRUE;
+    _data.MappingDiagnostic := '';
+    FOR n := 1 TO PL_Fraktal.MAX_BUS_NODES DO
+        _data.Nodes[n].Name := '';
+        _data.Nodes[n].DescriptionKey := '';
+        _data.Nodes[n].TypeId := '';
+        _data.Nodes[n].Address := '';
+        _data.Nodes[n].ParentIdx := 0;
+        _data.Nodes[n].ChannelCount := 0;
+        FOR c := 1 TO PL_Fraktal.MAX_NODE_CHANNELS DO
+            _data.Nodes[n].Channels[c].Name := '';
+            _data.Nodes[n].Channels[c].Path := '';
+        END_FOR
+    END_FOR
+ELSIF _attached THEN
+    ;
+ELSE
+    _attached := FALSE;
+END_IF
+Setup := _attached;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_DefineNode" Id="{f3c63915-4b75-4432-bc35-325d4ca2520a}">
+      <Declaration><![CDATA[METHOD M_DefineNode : BOOL
+VAR_INPUT
+    Index : INT;
+    Name : STRING(80);
+    DescriptionKey : STRING(160);
+    TypeId : STRING(80);
+    Address : STRING(40);
+    ParentIndex : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_DefineNode := FALSE;
+IF NOT _attached THEN
+    RETURN;
+ELSE
+    ;
+END_IF
+IF (Index < 1) OR (Index > PL_Fraktal.MAX_BUS_NODES)
+OR (Name = '') OR (Address = '')
+OR (ParentIndex < 0) OR (ParentIndex >= Index) THEN
+    _M_Reject(Text := 'std.error.fieldbusNodeMappingInvalid');
+    RETURN;
+ELSE
+    ;
+END_IF
+_data.Nodes[Index].Name := Name;
+_data.Nodes[Index].DescriptionKey := DescriptionKey;
+_data.Nodes[Index].TypeId := TypeId;
+_data.Nodes[Index].Address := Address;
+_data.Nodes[Index].ParentIdx := ParentIndex;
+IF Index > _data.NodeCount THEN
+    _data.NodeCount := Index;
+ELSE
+    ;
+END_IF
+M_DefineNode := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_DefineDigitalChannel" Id="{c8a4375b-e51b-4416-b08a-8f0548f925e2}">
+      <Declaration><![CDATA[METHOD M_DefineDigitalChannel : BOOL
+VAR_INPUT
+    NodeIndex : INT;
+    ChannelIndex : INT;
+    Tag : STRING(80);
+    DescriptionKey : STRING(160);
+    Address : STRING(80);
+    Path : STRING(255);
+    ModulePath : STRING(255);
+    Dir : E_ChannelDir;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_DefineDigitalChannel := FALSE;
+IF NOT _attached THEN
+    RETURN;
+ELSE
+    ;
+END_IF
+IF (NodeIndex < 1) OR (NodeIndex > _data.NodeCount)
+OR (ChannelIndex < 1) OR (ChannelIndex > PL_Fraktal.MAX_NODE_CHANNELS)
+OR (Tag = '') OR (DescriptionKey = '') OR (Address = '')
+OR (Path = '') OR (ModulePath = '') THEN
+    _M_Reject(Text := 'std.error.fieldbusChannelMappingInvalid');
+    RETURN;
+ELSE
+    ;
+END_IF
+_data.Nodes[NodeIndex].Channels[ChannelIndex].Name := Tag;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].DescriptionKey := DescriptionKey;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].Address := Address;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].Path := Path;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].ModulePath := ModulePath;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].Dir := Dir;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].Kind := E_ChannelKind.DIGITAL;
+_data.Nodes[NodeIndex].Channels[ChannelIndex].Quality := TRUE;
+IF ChannelIndex > _data.Nodes[NodeIndex].ChannelCount THEN
+    _data.Nodes[NodeIndex].ChannelCount := ChannelIndex;
+ELSE
+    ;
+END_IF
+M_DefineDigitalChannel := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SetDigitalValue" Id="{146327ba-4521-4237-bb66-96a285f5dcf5}">
+      <Declaration><![CDATA[METHOD M_SetDigitalValue : BOOL
+VAR_INPUT
+    NodeIndex : INT;
+    ChannelIndex : INT;
+    Value : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_SetDigitalValue := FALSE;
+IF _attached AND (NodeIndex >= 1) AND (NodeIndex <= _data.NodeCount)
+AND (ChannelIndex >= 1) AND (ChannelIndex <= _data.Nodes[NodeIndex].ChannelCount) THEN
+    _data.Nodes[NodeIndex].Channels[ChannelIndex].BoolValue := Value;
+    M_SetDigitalValue := TRUE;
+ELSE
+    _M_Reject(Text := 'std.error.fieldbusValueMappingInvalid');
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SetAllHealth" Id="{7c2c46b6-6262-48e9-84c0-b2c079620699}">
+      <Declaration><![CDATA[METHOD M_SetAllHealth
+VAR_INPUT
+    Healthy : BOOL;
+END_VAR
+VAR
+    n, c : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _attached THEN
+    FOR n := 1 TO _data.NodeCount DO
+        _data.Nodes[n].LinkOk := Healthy;
+        IF Healthy THEN
+            _data.Nodes[n].State := E_NodeState.OPERATIONAL;
+        ELSE
+            _data.Nodes[n].State := E_NodeState.FAULT;
+        END_IF
+        FOR c := 1 TO _data.Nodes[n].ChannelCount DO
+            _data.Nodes[n].Channels[c].Quality := Healthy;
+        END_FOR
+    END_FOR
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_BeginDiagnosticRefresh" Id="{56c165b0-35da-43a0-adbc-d089edb4cf2b}">
+      <Declaration><![CDATA[METHOD M_BeginDiagnosticRefresh
+VAR
+    n, c : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _attached THEN
+    FOR n := 1 TO _data.NodeCount DO
+        FOR c := 1 TO _data.Nodes[n].ChannelCount DO
+            _data.Nodes[n].Channels[c].FaultActive := FALSE;
+            _data.Nodes[n].Channels[c].Diagnostic := '';
+        END_FOR
+    END_FOR
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ApplyDiagnostic" Id="{a15f5b73-dd15-4821-806d-1cfab59c7882}">
+      <Declaration><![CDATA[METHOD M_ApplyDiagnostic
+VAR_INPUT
+    Diagnostic : ST_Diagnostic;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF Diagnostic.IoTag <> '' THEN
+    M_ApplyDiagnosticToTag(Diagnostic := Diagnostic, Tag := Diagnostic.IoTag);
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ApplyDiagnosticToTag" Id="{49206c89-18c2-4f53-9169-a1a47c6c35bd}">
+      <Declaration><![CDATA[METHOD M_ApplyDiagnosticToTag
+VAR_INPUT
+    Diagnostic : ST_Diagnostic;
+    Tag : STRING(80);
+END_VAR
+VAR
+    n, c : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _attached AND (Tag <> '') THEN
+    FOR n := 1 TO _data.NodeCount DO
+        FOR c := 1 TO _data.Nodes[n].ChannelCount DO
+            IF _data.Nodes[n].Channels[c].Name = Tag THEN
+                _data.Nodes[n].Channels[c].FaultActive := TRUE;
+                _data.Nodes[n].Channels[c].Diagnostic := Diagnostic.Description;
+            ELSE
+                ;
+            END_IF
+        END_FOR
+    END_FOR
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Validate" Id="{83b07c21-ae70-434e-af5d-014f3ecf5767}">
+      <Declaration><![CDATA[METHOD M_Validate : BOOL
+VAR
+    n, c, n2, c2 : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_Validate := FALSE;
+IF NOT _attached OR (_data.NodeCount < 1) THEN
+    _M_Reject(Text := 'std.error.fieldbusTopologyEmpty');
+    RETURN;
+ELSE
+    ;
+END_IF
+IF NOT _data.MappingValid THEN
+    RETURN; // preserve the first registration/value mapping failure
+ELSE
+    ;
+END_IF
+FOR n := 1 TO _data.NodeCount DO
+    IF (_data.Nodes[n].Name = '') OR (_data.Nodes[n].Address = '') THEN
+        _M_Reject(Text := 'std.error.fieldbusNodeMappingInvalid');
+        RETURN;
+    ELSE
+        ;
+    END_IF
+    FOR c := 1 TO _data.Nodes[n].ChannelCount DO
+        IF (_data.Nodes[n].Channels[c].Name = '')
+        OR (_data.Nodes[n].Channels[c].Address = '')
+        OR (_data.Nodes[n].Channels[c].Path = '')
+        OR (_data.Nodes[n].Channels[c].ModulePath = '') THEN
+            _M_Reject(Text := 'std.error.fieldbusChannelMappingInvalid');
+            RETURN;
+        ELSE
+            ;
+        END_IF
+        FOR n2 := n TO _data.NodeCount DO
+            FOR c2 := 1 TO _data.Nodes[n2].ChannelCount DO
+                IF ((n2 > n) OR (c2 > c))
+                AND ((_data.Nodes[n].Channels[c].Name = _data.Nodes[n2].Channels[c2].Name)
+                  OR (_data.Nodes[n].Channels[c].Path = _data.Nodes[n2].Channels[c2].Path)) THEN
+                    _M_Reject(Text := 'std.error.fieldbusChannelIdentityDuplicate');
+                    RETURN;
+                ELSE
+                    ;
+                END_IF
+            END_FOR
+        END_FOR
+    END_FOR
+END_FOR
+_data.MappingValid := TRUE;
+_data.MappingDiagnostic := '';
+M_Validate := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Reject" Id="{d4c29fab-77f4-4304-9c23-98b5a2921c2d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Reject
+VAR_INPUT
+    Text : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _attached THEN
+    _data.MappingValid := FALSE;
+    _data.MappingDiagnostic := Text;
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

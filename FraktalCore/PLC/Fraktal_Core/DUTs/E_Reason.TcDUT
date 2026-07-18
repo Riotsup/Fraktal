@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_Reason" Id="{3b2117b7-cb5a-4a55-bb2b-fc023be14a7f}">
+    <Declaration><![CDATA[// Core §8.8 — reason-code vocabulary. Framework bands only; module TYPES declare
+// their band codes (10000+) as DINT constants in their own library and assign them
+// to E_Reason members of ST_Diagnostic (enum is deliberately NOT 'strict' so band
+// codes outside this declaration remain assignable — see IMPLEMENTATION_NOTES §3).
+// Registry: Core §8.8. Codes are positive (PLCopen ErrorID is unsigned).
+{attribute 'qualified_only'}
+TYPE E_Reason :
+(
+    NONE                    := 0,
+
+    // ── System 10–19: controller & clock health (Core §8.12, §2.7) ──
+    TASK_OVERRUN            := 10,
+    TASK_JITTER_HIGH        := 11,
+    CPU_LOAD_HIGH           := 12,
+    MEMORY_LOW              := 13,
+    IPC_TEMP_HIGH           := 14,
+    FIELDBUS_MASTER_FAULT   := 15,
+    DC_SYNC_LOST            := 16,
+    TIME_SYNC_LOST          := 17,
+    UTILITY_DEVIATION       := 18,
+
+    // ── Framework 2000–2009: common flow reasons (Core §8.8) ──
+    TIMEOUT                 := 2001,
+    PERMISSIVE_NOT_MET      := 2002,
+    INTERLOCK_DROPPED       := 2003,
+    RECIPE_INVALID          := 2004,
+    STEP_STALLED            := 2005,
+    RETRY_EXHAUSTED         := 2006,
+    CYCLE_TIME_DEGRADED     := 2007,   // maintenance event on timing drift (Core §8.11.4(d)/§8.12)
+    UNSUPPORTED_COMMAND     := 2008,   // command outside the type's supported set (§5.6)
+
+    // ── Framework 2010–2019: external device / link supervision (Core §3.15) ──
+    LINK_TIMEOUT            := 2010,
+    DEVICE_NOT_READY        := 2011,
+    DEVICE_PROTOCOL_ERROR   := 2012,
+
+    // ── Framework 2020–2029: traceability / part context (Core §3.16) ──
+    CARRIER_READ_FAILED     := 2020,
+    CARRIER_WRITE_FAILED    := 2021,
+    PART_ID_MISMATCH        := 2022,
+    RESULT_RECORD_REJECTED  := 2023,
+    // §3.16.3 canonical part-lifecycle events (MESSAGE ring entries, not faults)
+    EVENT_PART_RECEIVED           := 2024,
+    EVENT_PART_PROCESSING_STARTED := 2025,
+    EVENT_PART_PROCESSED          := 2026,
+    EVENT_PART_PROCESSING_ABORTED := 2027,
+
+    // ── Framework 2900–2909: framework self-test (never raised in production) ──
+    TEST_FAULT              := 2901
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

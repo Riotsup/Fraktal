@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ChannelDir" Id="{3992dad2-8744-4fee-b844-240c6ffa2ca4}">
+    <Declaration><![CDATA[// Core §10.5.1
+{attribute 'qualified_only'}
+TYPE E_ChannelDir : (INPUT := 0, OUTPUT := 1) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

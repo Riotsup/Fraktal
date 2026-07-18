@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ClampStationUnit_Tests" Id="{78856f84-4173-418b-a23e-539be1f5662e}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ClampStationUnit_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _station : FB_ClampStationUnit;
+    _halA, _halB : ST_CylinderHal;
+    _simA, _simB : FB_CylinderSim;
+    _recipe : FB_LocalRecipeProvider;
+    _cylinderCfg : ST_CylinderParCfg;
+    _clampCfg : ST_ClampParCfg;
+    _wired : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[IF NOT _wired THEN
+    _recipe.Register(ModelCode := '', RecipeKey := 'CylinderCM', pData := ADR(_cylinderCfg), Size := SIZEOF(_cylinderCfg));
+    _recipe.Register(ModelCode := '', RecipeKey := 'ClampEM', pData := ADR(_clampCfg), Size := SIZEOF(_clampCfg));
+    _station.Setup(Name := 'Test.Station', HalA := _halA, HalB := _halB, Recipe := _recipe);
+    _simA.Setup(HalRef := _halA, TravelTime := T#0S);
+    _simB.Setup(HalRef := _halB, TravelTime := T#0S);
+    _wired := TRUE;
+END_IF
+Root_is_a_real_unit();]]></ST></Implementation>
+    <Method Name="Root_is_a_real_unit" Id="{f64c2d18-544b-493b-b2df-d5e3a546e033}">
+      <Declaration><![CDATA[METHOD Root_is_a_real_unit]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Root_is_a_real_unit');
+_station();
+AssertEquals_DINT(Expected := TO_DINT(E_ModuleType.UNIT),
+    Actual := TO_DINT(_station.Status.ModuleType),
+    Message := 'demo root publishes Unit identity');
+AssertEquals_DINT(Expected := TO_DINT(E_ModuleType.EQUIPMENT_MODULE),
+    Actual := TO_DINT(_station.Clamp.Status.ModuleType),
+    Message := 'Clamp remains an Equipment Module child');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

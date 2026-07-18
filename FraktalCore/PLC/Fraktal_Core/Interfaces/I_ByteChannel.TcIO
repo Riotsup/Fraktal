@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_ByteChannel" Id="{bda1b73b-218f-4f8e-9d89-b5981632ab3a}">
+    <Declaration><![CDATA[// Core §3.15.1a — THE porting seam for TCP/serial devices. Non-blocking,
+// cyclic-poll semantics: every method returns immediately; progress is observed
+// via State() over scans. [TC3]: Tc2_TcpIp (TC3 §3.15); CODESYS: SysSocket/NBS;
+// Siemens: TSEND_C/TRCV_C wrappers. Device CMs written against this interface
+// port between PLC brands unmodified (O4/O8).
+INTERFACE I_ByteChannel]]></Declaration>
+    <Method Name="Open" Id="{7a0ad13d-ad20-4782-a2f2-b81077acd403}">
+      <Declaration><![CDATA[// begin opening (non-blocking); observe State() -> OPENING -> OPEN/FAULT
+METHOD Open : BOOL
+VAR_INPUT
+    Host : STRING(80);
+    Port : UINT;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="Close" Id="{eec66c01-5b86-4294-8d60-9efd5cd42c9f}">
+      <Declaration><![CDATA[METHOD Close : BOOL]]></Declaration>
+    </Method>
+    <Method Name="Send" Id="{48bf5dde-9c15-4f12-9605-9906b471e001}">
+      <Declaration><![CDATA[// queue Text for transmission (no terminator added here). FALSE if not OPEN.
+METHOD Send : BOOL
+VAR_INPUT
+    Text : STRING(255);
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="Poll" Id="{ae9c7796-1061-4c17-baf0-444b06048b2d}">
+      <Declaration><![CDATA[// drain received bytes: appends to Buffer, returns chars appended this call.
+METHOD Poll : INT
+VAR_IN_OUT
+    Buffer : STRING(255);
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="State" Id="{5378d603-5f97-49be-8312-78c003b5fda3}">
+      <Declaration><![CDATA[METHOD State : E_ByteChannelState]]></Declaration>
+    </Method>
+    <Method Name="Tick" Id="{0e372d56-e681-4069-a8ae-475621f3b8cb}">
+      <Declaration><![CDATA[// drive the channel's internal state machine once per scan
+METHOD Tick : BOOL]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

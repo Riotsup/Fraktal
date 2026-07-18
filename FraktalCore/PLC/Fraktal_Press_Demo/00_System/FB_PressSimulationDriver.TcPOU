@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressSimulationDriver" Id="{45745cc5-6150-45cf-8d2e-13c06f66ea23}" SpecialFunc="None">
+    <Declaration><![CDATA[// Simulation Hardware Driver implementing the same semantic HAL boundary as the
+// physical driver. No simulation expressions or plant models leak into MAIN.
+FUNCTION_BLOCK FB_PressSimulationDriver
+VAR
+    _pressSim, _doorSim, _slideSim : FB_CylinderSim;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="Setup" Id="{6771ba2b-d76b-487b-bcd2-c4ef899ba259}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    PressHal : REFERENCE TO ST_CylinderHal;
+    DoorHal : REFERENCE TO ST_CylinderHal;
+    SlideHal : REFERENCE TO ST_CylinderHal;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_pressSim.Setup(HalRef := PressHal, TravelTime := T#250MS);
+_doorSim.Setup(HalRef := DoorHal, TravelTime := T#200MS);
+_slideSim.Setup(HalRef := SlideHal, TravelTime := T#300MS);
+Setup := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ReadInputs" Id="{8c9ea98a-87e5-44ff-bf8d-a4864c6c5d37}">
+      <Declaration><![CDATA[METHOD M_ReadInputs
+VAR_INPUT
+    SimEStopNc : BOOL;
+    SimLeftButton : BOOL;
+    SimRightButton : BOOL;
+    SimSafetyValveOk : BOOL;
+    SimFieldbusHealthy : BOOL;
+    SimPartPresent : BOOL;
+    SimAirPressureOk : BOOL;
+    PowerRequested : BOOL;
+END_VAR
+VAR_IN_OUT
+    DoorHal : ST_CylinderHal;
+    TwoHandHal : ST_TwoHandHal;
+    PowerHal : ST_PowerGroupHal;
+    PartPresentHal : ST_DigitalInputHal;
+    AirPressureHal : ST_AirPressureHal;
+    RawEStopHealthy : BOOL;
+    SafeEStopOk : BOOL;
+    SafeGuardClosed : BOOL;
+    SafeTwoHandActive : BOOL;
+    SafePneumaticPermit : BOOL;
+    SafetyFieldbusHealthy : BOOL;
+    StandardIoHealthy : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[// SIMULATION ONLY — these are not safety calculations for a physical machine.
+RawEStopHealthy := SimEStopNc;
+SafeEStopOk := SimEStopNc AND SimFieldbusHealthy;
+SafeGuardClosed := DoorHal.ExtendedFb AND SimFieldbusHealthy;
+SafeTwoHandActive := SimLeftButton AND SimRightButton AND SafeEStopOk
+    AND SimSafetyValveOk AND SimFieldbusHealthy;
+SafePneumaticPermit := SafeEStopOk AND SimSafetyValveOk;
+SafetyFieldbusHealthy := SimFieldbusHealthy;
+StandardIoHealthy := SimFieldbusHealthy;
+PartPresentHal.Value := SimPartPresent;
+PartPresentHal.Quality := SimFieldbusHealthy;
+AirPressureHal.LowPressure := NOT SimAirPressureOk;
+AirPressureHal.OperatingPressure := SimAirPressureOk;
+AirPressureHal.Quality := SimFieldbusHealthy;
+TwoHandHal.LeftPressed := SimLeftButton;
+TwoHandHal.RightPressed := SimRightButton;
+PowerHal.PowerFeedback := PowerRequested AND SafePneumaticPermit;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_RefreshPlant" Id="{047d3bc8-f710-4644-a283-bcbd7f426bae}">
+      <Declaration><![CDATA[METHOD M_RefreshPlant]]></Declaration>
+      <Implementation><ST><![CDATA[_pressSim();
+_doorSim();
+_slideSim();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Iv3VisionCM" Id="{778f9443-5e61-4675-8522-428495f8d372}" SpecialFunc="None">
+    <Declaration><![CDATA[// MODEL PRESET (Core §3.15.1a): Keyence IV3 = the generic FB_TcpVisionCM with
+// preconfigured protocol strings. Everything below is configuration, not code —
+// a deployment could equally instantiate FB_TcpVisionCM and set these via §3.8.
+// Extend further ONLY for genuinely IV3-specific features (override _M_OnResponse
+// for special result formats, add commands to the §7.6.1 catalog, etc.).
+// Strings are TYPICAL of the IV3 non-procedural protocol — VERIFY vs the IV3
+// communication manual for the deployed model/firmware.
+FUNCTION_BLOCK FB_Iv3VisionCM EXTENDS FB_TcpVisionCM
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{32248fd9-b357-49cb-857e-405889863cac}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    Chan : I_ByteChannel;
+    DevHost : STRING(80);
+    DevPort : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ParCfg.TriggerCmd := 'T1'; // IV3 preset — VERIFY vs manual
+ParCfg.OkPrefix := 'OK';
+ParCfg.NgPrefix := 'NG';
+Setup := SUPER^.Setup(Name := Name, Chan := Chan, DevHost := DevHost, DevPort := DevPort);]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

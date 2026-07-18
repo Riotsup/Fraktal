@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_DigitalInputCM" Id="{bef0d2f4-c055-483d-87bd-71220916a9c8}" SpecialFunc="None">
+    <Declaration><![CDATA[// Basic passive digital-input CM. Owning logic consumes semantic Value; the
+// project catalog injects the physical identity separately from the HAL.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_DigitalInputCM EXTENDS FB_ControlModuleBase
+VAR_OUTPUT
+    OutImm : ST_DigitalInputOutImm;
+END_VAR
+VAR
+    _hal : REFERENCE TO ST_DigitalInputHal;
+    _identity : ST_IoPointIdentity;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Cyclic();]]></ST></Implementation>
+    <Method Name="Setup" Id="{b70106bd-7c20-4eb4-9f60-84b9b573029d}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    HalRef : REFERENCE TO ST_DigitalInputHal;
+    DisplayNameKey : STRING(160);
+    DescriptionKey : STRING(160);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := DisplayNameKey, DescriptionKey := DescriptionKey);
+_hal REF= HalRef;
+Setup := __ISVALIDREF(_hal);]]></ST></Implementation>
+    </Method>
+    <Method Name="ConfigureIoIdentity" Id="{789228a1-b030-462d-87c0-971c9df0b9b1}">
+      <Declaration><![CDATA[METHOD ConfigureIoIdentity
+VAR_INPUT
+    Identity : ST_IoPointIdentity;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_identity := Identity;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{db657fb3-2810-452c-9365-29a71eab4373}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+IF __ISVALIDREF(_hal) THEN
+    OutImm.Value := _hal.Value;
+    OutImm.Quality := _hal.Quality;
+ELSE
+    OutImm.Value := FALSE;
+    OutImm.Quality := FALSE;
+END_IF
+OutImm.IoTag := _identity.Tag;
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{e15aca44-e2b0-4382-a45f-cbbefbe8d5a2}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Fault(E_Reason.UNSUPPORTED_COMMAND,
+    'std.error.passiveInputHasNoCommand');]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{ec384437-4c0b-4098-b960-6f8ef7a4915b}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_DigitalInputHal" Id="{255d4c3a-b1fb-4337-94d3-c080a2edc9d5}">
+    <Declaration><![CDATA[TYPE ST_DigitalInputHal :
+STRUCT
+    Value : BOOL;
+    Quality : BOOL := TRUE;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

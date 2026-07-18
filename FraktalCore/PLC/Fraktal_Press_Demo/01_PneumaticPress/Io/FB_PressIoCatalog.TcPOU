@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressIoCatalog" Id="{f87aff2e-14c3-4b63-8f9e-8479a46e5daf}" SpecialFunc="None">
+    <Declaration><![CDATA[// Owner-local I/O engineering-data adapter. This is the ONE source for the approved
+// tag/address/description/module-role join. It contains no cyclic behavior,
+// process-image access, topology algorithms or device logic.
+FUNCTION_BLOCK FB_PressIoCatalog
+VAR
+    _publisher : FB_IoTopologyPublisher;
+    _rootPath : STRING(255);
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="Setup" Id="{ff7e16ab-bc71-45f0-9ca0-2c6de0f16cc2}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    UnitRef : REFERENCE TO FB_PressDemoUnit;
+END_VAR
+VAR
+    Ok : BOOL;
+    SlideIdentity, DoorIdentity, PressIdentity : ST_CylinderIoIdentity;
+    PartIdentity, LowAirIdentity, OperatingAirIdentity : ST_IoPointIdentity;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_rootPath := UnitRef.Name;
+Ok := _publisher.Setup(DataRef := GVL_PressFieldbus.Topology, ResetData := TRUE);
+Ok := _publisher.M_DefineNode(Index := 1, Name := '=000+S-A610-A1',
+    DescriptionKey := 'project.hardware.cx2030', TypeId := 'Beckhoff CX2030',
+    Address := 'EtherCAT master', ParentIndex := 0) AND Ok;
+Ok := _publisher.M_DefineNode(Index := 2, Name := '=000+S-K010',
+    DescriptionKey := 'project.hardware.ek1200', TypeId := 'Beckhoff EK1200-5000',
+    Address := 'EtherCAT Box 1', ParentIndex := 1) AND Ok;
+Ok := _publisher.M_DefineNode(Index := 3, Name := '=000+S-K010B1',
+    DescriptionKey := 'project.hardware.el1809', TypeId := 'Beckhoff EL1809',
+    Address := 'EtherCAT Box 2', ParentIndex := 2) AND Ok;
+Ok := _publisher.M_DefineNode(Index := 4, Name := '=000+S-K010C1',
+    DescriptionKey := 'project.hardware.el2809', TypeId := 'Beckhoff EL2809',
+    Address := 'EtherCAT Box 3', ParentIndex := 2) AND Ok;
+Ok := _publisher.M_DefineNode(Index := 5, Name := '=000+S-K010D1',
+    DescriptionKey := 'project.hardware.el6001', TypeId := 'Beckhoff EL6001 RS232',
+    Address := 'EtherCAT Box 4', ParentIndex := 2) AND Ok;
+Ok := _publisher.M_DefineNode(Index := 6, Name := '=000+S-K010E',
+    DescriptionKey := 'project.hardware.el9011', TypeId := 'Beckhoff EL9011',
+    Address := 'EtherCAT Box 5', ParentIndex := 2) AND Ok;
+
+Ok := _M_DefineCylinder(Identity := SlideIdentity,
+    ModulePath := UnitRef.PartSlide.Name,
+    ExtendedSensorTag := '_101B301A', ExtendedSensorDescription := 'project.io.101B301A',
+    ExtendedSensorAddress := '=000+S-K010B1 Ch1', ExtendedSensorIndex := 1,
+    RetractedSensorTag := '_101B301B', RetractedSensorDescription := 'project.io.101B301B',
+    RetractedSensorAddress := '=000+S-K010B1 Ch2', RetractedSensorIndex := 2,
+    ExtendOutputTag := '_101K301A', ExtendOutputDescription := 'project.io.101K301A',
+    ExtendOutputAddress := '=000+S-K010C1 Ch1', ExtendOutputIndex := 1,
+    RetractOutputTag := '_101K301B', RetractOutputDescription := 'project.io.101K301B',
+    RetractOutputAddress := '=000+S-K010C1 Ch2', RetractOutputIndex := 2,
+    ExtendedTimeoutKey := 'project.error.slideInsideSensorTimeout',
+    RetractedTimeoutKey := 'project.error.slideOutsideSensorTimeout',
+    BothSensorsKey := 'project.error.slidePositionSensorsConflict') AND Ok;
+UnitRef.PartSlide.ConfigureIoIdentity(Identity := SlideIdentity);
+Ok := _M_DefineCylinder(Identity := DoorIdentity,
+    ModulePath := UnitRef.Door.Name,
+    ExtendedSensorTag := '_101B201A', ExtendedSensorDescription := 'project.io.101B201A',
+    ExtendedSensorAddress := '=000+S-K010B1 Ch3', ExtendedSensorIndex := 3,
+    RetractedSensorTag := '_101B201B', RetractedSensorDescription := 'project.io.101B201B',
+    RetractedSensorAddress := '=000+S-K010B1 Ch4', RetractedSensorIndex := 4,
+    ExtendOutputTag := '_101K201A', ExtendOutputDescription := 'project.io.101K201A',
+    ExtendOutputAddress := '=000+S-K010C1 Ch3', ExtendOutputIndex := 3,
+    RetractOutputTag := '_101K201B', RetractOutputDescription := 'project.io.101K201B',
+    RetractOutputAddress := '=000+S-K010C1 Ch4', RetractOutputIndex := 4,
+    ExtendedTimeoutKey := 'project.error.doorClosedSensorTimeout',
+    RetractedTimeoutKey := 'project.error.doorOpenSensorTimeout',
+    BothSensorsKey := 'project.error.doorPositionSensorsConflict') AND Ok;
+UnitRef.Door.ConfigureIoIdentity(Identity := DoorIdentity);
+Ok := _M_DefineCylinder(Identity := PressIdentity,
+    ModulePath := UnitRef.PressRam.Name,
+    ExtendedSensorTag := '_101B202A', ExtendedSensorDescription := 'project.io.101B202A',
+    ExtendedSensorAddress := '=000+S-K010B1 Ch5', ExtendedSensorIndex := 5,
+    RetractedSensorTag := '_101B202B', RetractedSensorDescription := 'project.io.101B202B',
+    RetractedSensorAddress := '=000+S-K010B1 Ch6', RetractedSensorIndex := 6,
+    ExtendOutputTag := '_101K202A', ExtendOutputDescription := 'project.io.101K202A',
+    ExtendOutputAddress := '=000+S-K010C1 Ch5', ExtendOutputIndex := 5,
+    RetractOutputTag := '_101K202B', RetractOutputDescription := 'project.io.101K202B',
+    RetractOutputAddress := '=000+S-K010C1 Ch6', RetractOutputIndex := 6,
+    ExtendedTimeoutKey := 'project.error.pressDownSensorTimeout',
+    RetractedTimeoutKey := 'project.error.pressUpSensorTimeout',
+    BothSensorsKey := 'project.error.pressPositionSensorsConflict') AND Ok;
+UnitRef.PressRam.ConfigureIoIdentity(Identity := PressIdentity);
+
+Ok := _M_DefinePoint(NodeIndex := 3, ChannelIndex := 7, Tag := '_101S101',
+    DescriptionKey := 'project.io.101S101', Address := '=000+S-K010B1 Ch7',
+    ModulePath := UnitRef.TwoHand.Name, Dir := E_ChannelDir.INPUT) AND Ok;
+Ok := _M_DefinePoint(NodeIndex := 3, ChannelIndex := 8, Tag := '_101S102',
+    DescriptionKey := 'project.io.101S102', Address := '=000+S-K010B1 Ch8',
+    ModulePath := UnitRef.TwoHand.Name, Dir := E_ChannelDir.INPUT) AND Ok;
+LowAirIdentity.Tag := '_000MB085A_2';
+LowAirIdentity.DescriptionKey := 'project.io.000MB085A_2';
+LowAirIdentity.Address := '=000+S-K010B1 Ch10';
+LowAirIdentity.ModulePath := UnitRef.AirPressureMonitor.Name;
+LowAirIdentity.Path := CONCAT(_rootPath, '.IO._000MB085A_2');
+Ok := _M_DefineIdentity(NodeIndex := 3, ChannelIndex := 9,
+    Identity := LowAirIdentity, Dir := E_ChannelDir.INPUT) AND Ok;
+OperatingAirIdentity.Tag := '_000MB085A_4';
+OperatingAirIdentity.DescriptionKey := 'project.io.000MB085A_4';
+OperatingAirIdentity.Address := '=000+S-K010B1 Ch11';
+OperatingAirIdentity.ModulePath := UnitRef.AirPressureMonitor.Name;
+OperatingAirIdentity.Path := CONCAT(_rootPath, '.IO._000MB085A_4');
+Ok := _M_DefineIdentity(NodeIndex := 3, ChannelIndex := 10,
+    Identity := OperatingAirIdentity, Dir := E_ChannelDir.INPUT) AND Ok;
+UnitRef.AirPressureMonitor.ConfigureIoIdentity(LowSensor := LowAirIdentity,
+    OperatingSensor := OperatingAirIdentity);
+PartIdentity.Tag := '_101B601';
+PartIdentity.DescriptionKey := 'project.io.101B601';
+PartIdentity.Address := '=000+S-K010B1 Ch12';
+PartIdentity.ModulePath := UnitRef.PartPresentSensor.Name;
+PartIdentity.Path := CONCAT(_rootPath, '.IO._101B601');
+Ok := _M_DefineIdentity(NodeIndex := 3, ChannelIndex := 11,
+    Identity := PartIdentity, Dir := E_ChannelDir.INPUT) AND Ok;
+UnitRef.PartPresentSensor.ConfigureIoIdentity(Identity := PartIdentity);
+Ok := _M_DefinePoint(NodeIndex := 3, ChannelIndex := 12, Tag := '_000K911_Y32',
+    DescriptionKey := 'project.io.000K911_Y32', Address := '=000+S-K010B1 Ch14',
+    ModulePath := UnitRef.PneumaticPower.Name, Dir := E_ChannelDir.INPUT) AND Ok;
+Ok := _M_DefinePoint(NodeIndex := 3, ChannelIndex := 13, Tag := '_000K910A',
+    DescriptionKey := 'project.io.000K910A', Address := '=000+S-K010B1 Ch15',
+    ModulePath := UnitRef.Name, Dir := E_ChannelDir.INPUT) AND Ok;
+Ok := _M_DefinePoint(NodeIndex := 4, ChannelIndex := 7, Tag := '_101P101',
+    DescriptionKey := 'project.io.101P101', Address := '=000+S-K010C1 Ch7',
+    ModulePath := UnitRef.TwoHand.Name, Dir := E_ChannelDir.OUTPUT) AND Ok;
+Ok := _M_DefinePoint(NodeIndex := 4, ChannelIndex := 8, Tag := '_101P102',
+    DescriptionKey := 'project.io.101P102', Address := '=000+S-K010C1 Ch8',
+    ModulePath := UnitRef.TwoHand.Name, Dir := E_ChannelDir.OUTPUT) AND Ok;
+Ok := _M_DefinePoint(NodeIndex := 4, ChannelIndex := 9, Tag := '_000K951_A1',
+    DescriptionKey := 'project.io.000K951_A1', Address := '=000+S-K010C1 Ch10',
+    ModulePath := UnitRef.PneumaticPower.Name, Dir := E_ChannelDir.OUTPUT) AND Ok;
+Ok := _M_DefinePoint(NodeIndex := 4, ChannelIndex := 10, Tag := '_000K911_A1',
+    DescriptionKey := 'project.io.000K911_A1', Address := '=000+S-K010C1 Ch11',
+    ModulePath := UnitRef.PneumaticPower.Name, Dir := E_ChannelDir.OUTPUT) AND Ok;
+Setup := _publisher.M_Validate() AND Ok;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_DefineIdentity" Id="{2bb31b26-6795-4795-860f-0bb952c52b59}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DefineIdentity : BOOL
+VAR_INPUT
+    NodeIndex : INT;
+    ChannelIndex : INT;
+    Identity : ST_IoPointIdentity;
+    Dir : E_ChannelDir;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_DefineIdentity := _publisher.M_DefineDigitalChannel(
+    NodeIndex := NodeIndex, ChannelIndex := ChannelIndex, Tag := Identity.Tag,
+    DescriptionKey := Identity.DescriptionKey, Address := Identity.Address,
+    Path := Identity.Path, ModulePath := Identity.ModulePath, Dir := Dir);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_DefinePoint" Id="{fe163329-6521-4cf6-87a9-3be8050e343b}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DefinePoint : BOOL
+VAR_INPUT
+    NodeIndex : INT;
+    ChannelIndex : INT;
+    Tag : STRING(80);
+    DescriptionKey : STRING(160);
+    Address : STRING(80);
+    ModulePath : STRING(255);
+    Dir : E_ChannelDir;
+END_VAR
+VAR
+    Path : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Path := CONCAT(_rootPath, CONCAT('.IO.', Tag));
+_M_DefinePoint := _publisher.M_DefineDigitalChannel(NodeIndex := NodeIndex,
+    ChannelIndex := ChannelIndex, Tag := Tag, DescriptionKey := DescriptionKey,
+    Address := Address, Path := Path, ModulePath := ModulePath, Dir := Dir);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_DefineCylinder" Id="{fcae49bf-ae36-41c3-abfb-2277db3a02c9}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DefineCylinder : BOOL
+VAR_INPUT
+    ModulePath : STRING(255);
+    ExtendedSensorTag : STRING(80);
+    ExtendedSensorDescription : STRING(160);
+    ExtendedSensorAddress : STRING(80);
+    ExtendedSensorIndex : INT;
+    RetractedSensorTag : STRING(80);
+    RetractedSensorDescription : STRING(160);
+    RetractedSensorAddress : STRING(80);
+    RetractedSensorIndex : INT;
+    ExtendOutputTag : STRING(80);
+    ExtendOutputDescription : STRING(160);
+    ExtendOutputAddress : STRING(80);
+    ExtendOutputIndex : INT;
+    RetractOutputTag : STRING(80);
+    RetractOutputDescription : STRING(160);
+    RetractOutputAddress : STRING(80);
+    RetractOutputIndex : INT;
+    ExtendedTimeoutKey : STRING(255);
+    RetractedTimeoutKey : STRING(255);
+    BothSensorsKey : STRING(255);
+END_VAR
+VAR_IN_OUT
+    Identity : ST_CylinderIoIdentity;
+END_VAR
+VAR
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Identity.ExtendedSensor.Tag := ExtendedSensorTag;
+Identity.ExtendedSensor.Address := ExtendedSensorAddress;
+Identity.ExtendedSensor.DescriptionKey := ExtendedSensorDescription;
+Identity.ExtendedSensor.ModulePath := ModulePath;
+Identity.ExtendedSensor.Path := CONCAT(_rootPath, CONCAT('.IO.', ExtendedSensorTag));
+Identity.RetractedSensor.Tag := RetractedSensorTag;
+Identity.RetractedSensor.Address := RetractedSensorAddress;
+Identity.RetractedSensor.DescriptionKey := RetractedSensorDescription;
+Identity.RetractedSensor.ModulePath := ModulePath;
+Identity.RetractedSensor.Path := CONCAT(_rootPath, CONCAT('.IO.', RetractedSensorTag));
+Identity.ExtendOutput.Tag := ExtendOutputTag;
+Identity.ExtendOutput.Address := ExtendOutputAddress;
+Identity.ExtendOutput.DescriptionKey := ExtendOutputDescription;
+Identity.ExtendOutput.ModulePath := ModulePath;
+Identity.ExtendOutput.Path := CONCAT(_rootPath, CONCAT('.IO.', ExtendOutputTag));
+Identity.RetractOutput.Tag := RetractOutputTag;
+Identity.RetractOutput.Address := RetractOutputAddress;
+Identity.RetractOutput.DescriptionKey := RetractOutputDescription;
+Identity.RetractOutput.ModulePath := ModulePath;
+Identity.RetractOutput.Path := CONCAT(_rootPath, CONCAT('.IO.', RetractOutputTag));
+Identity.ExtendedTimeoutKey := ExtendedTimeoutKey;
+Identity.RetractedTimeoutKey := RetractedTimeoutKey;
+Identity.BothSensorsKey := BothSensorsKey;
+Ok := _publisher.M_DefineDigitalChannel(NodeIndex := 3, ChannelIndex := ExtendedSensorIndex,
+    Tag := Identity.ExtendedSensor.Tag, DescriptionKey := Identity.ExtendedSensor.DescriptionKey,
+    Address := Identity.ExtendedSensor.Address, Path := Identity.ExtendedSensor.Path,
+    ModulePath := ModulePath, Dir := E_ChannelDir.INPUT);
+Ok := _publisher.M_DefineDigitalChannel(NodeIndex := 3, ChannelIndex := RetractedSensorIndex,
+    Tag := Identity.RetractedSensor.Tag, DescriptionKey := Identity.RetractedSensor.DescriptionKey,
+    Address := Identity.RetractedSensor.Address, Path := Identity.RetractedSensor.Path,
+    ModulePath := ModulePath, Dir := E_ChannelDir.INPUT) AND Ok;
+Ok := _publisher.M_DefineDigitalChannel(NodeIndex := 4, ChannelIndex := ExtendOutputIndex,
+    Tag := Identity.ExtendOutput.Tag, DescriptionKey := Identity.ExtendOutput.DescriptionKey,
+    Address := Identity.ExtendOutput.Address, Path := Identity.ExtendOutput.Path,
+    ModulePath := ModulePath, Dir := E_ChannelDir.OUTPUT) AND Ok;
+Ok := _publisher.M_DefineDigitalChannel(NodeIndex := 4, ChannelIndex := RetractOutputIndex,
+    Tag := Identity.RetractOutput.Tag, DescriptionKey := Identity.RetractOutput.DescriptionKey,
+    Address := Identity.RetractOutput.Address, Path := Identity.RetractOutput.Path,
+    ModulePath := ModulePath, Dir := E_ChannelDir.OUTPUT) AND Ok;
+_M_DefineCylinder := Ok;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

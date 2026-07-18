@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_SafetyStatus" Id="{a8b0235d-8967-4f71-be52-9ed39605d873}">
+    <Declaration><![CDATA[TYPE ST_SafetyStatus :
+STRUCT
+    Present         : BOOL;
+    AllSafe         : BOOL;
+    DemandActive    : BOOL;
+    ResetRequired   : BOOL;
+    FaultActive     : BOOL;
+    MutingActive    : BOOL;
+    BridgeActive    : BOOL;
+    StopRequested   : BOOL;
+    DeviceCount     : INT;
+    Devices         : ARRAY[1..PL_Fraktal.MAX_SAFETY_DEVICES] OF ST_SafetyDeviceStatus;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

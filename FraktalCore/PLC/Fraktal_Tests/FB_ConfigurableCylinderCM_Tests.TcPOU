@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ConfigurableCylinderCM_Tests" Id="{3f168567-7c2e-4cf8-afa3-1a97ac3a7359}" SpecialFunc="None">
+    <Declaration><![CDATA[// FB_ConfigurableCylinderCM redundant-sensor suite: duplex AND-arrival, discrepancy fault,
+// sensorless time-based, timeout, bad config. T1/T4 inherited (§5.7).
+FUNCTION_BLOCK FB_ConfigurableCylinderCM_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _cm  : FB_ConfigurableCylinderCM;   _h  : ST_ConfigurableCylinderHal;   _sim : FB_ConfigurableCylinderSim;   _pr : FB_LocalRecipeProvider;  _cfg : ST_ConfigurableCylinderParCfg;
+    _cmD : FB_ConfigurableCylinderCM;   _hD : ST_ConfigurableCylinderHal;   _simD : FB_ConfigurableCylinderSim;  _prD : FB_LocalRecipeProvider; _cfgD : ST_ConfigurableCylinderParCfg;
+    _cmN : FB_ConfigurableCylinderCM;   _hN : ST_ConfigurableCylinderHal;   _simN : FB_ConfigurableCylinderSim;  _prN : FB_LocalRecipeProvider; _cfgN : ST_ConfigurableCylinderParCfg;
+    _cmT : FB_ConfigurableCylinderCM;   _hT : ST_ConfigurableCylinderHal;
+    _d : ST_Diagnostic;  _w : BOOL;  _i : INT;
+    _dupScans, _discScans, _noSensScans : INT;   // multi-scan budgets (time-based sims, §5.7)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    // duplex work sensors (2), AND-combined
+    _cfg.WorkSensorCount := 2; _cfg.HomeSensorCount := 2;
+    _pr.Register(ModelCode := '', RecipeKey := 'ConfigurableCylinderCM', pData := ADR(_cfg), Size := SIZEOF(_cfg));
+    _cm.Setup(Name := 'Test.Duplex', HalRef := _h, Recipe := _pr);
+    _sim.Setup(HalRef := _h, TravelTime := T#20MS, Home := 2, Work := 2);
+    // duplex but one work sensor stuck OFF -> discrepancy
+    _cfgD.WorkSensorCount := 2; _cfgD.HomeSensorCount := 2; _cfgD.DiscrepancyTime := T#0S;
+    _prD.Register(ModelCode := '', RecipeKey := 'ConfigurableCylinderCM', pData := ADR(_cfgD), Size := SIZEOF(_cfgD));
+    _cmD.Setup(Name := 'Test.Disc', HalRef := _hD, Recipe := _prD);
+    _simD.Setup(HalRef := _hD, TravelTime := T#20MS, Home := 2, Work := 2);
+    _simD.StuckWork[2] := TRUE;                        // sensor 2 never makes -> split
+    // sensorless work
+    _cfgN.WorkSensorCount := 0; _cfgN.TravelTime := T#20MS;
+    _prN.Register(ModelCode := '', RecipeKey := 'ConfigurableCylinderCM', pData := ADR(_cfgN), Size := SIZEOF(_cfgN));
+    _cmN.Setup(Name := 'Test.NoSens', HalRef := _hN, Recipe := _prN);
+    _simN.Setup(HalRef := _hN, TravelTime := T#20MS, Home := 1, Work := 0);
+    _cmT.Setup(Name := 'Test.TO', HalRef := _hT, Recipe := 0); // local defaults, no sim
+    _w := TRUE;
+END_IF
+Duplex_all_agree_completes();
+Discrepancy_faults();
+Sensorless_completes_on_time();
+Timeout_faults();]]></ST>
+    </Implementation>
+    <Method Name="Duplex_all_agree_completes" Id="{4cd651d8-c97a-457c-b614-42e72c838bec}">
+      <Declaration><![CDATA[METHOD Duplex_all_agree_completes]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TON-based sim/settle: run ONE iteration per task cycle until Done or budget.
+TEST('Duplex_all_agree_completes');
+_cm.Command := E_ConfigurableCylinderCommand.TO_WORK;
+_cm.Execute := TRUE;
+_cm(); _sim();
+_dupScans := _dupScans + 1;
+IF _cm.Done OR _cm.Error OR (_dupScans >= 100) THEN
+    AssertTrue(Condition := _cm.Done, Message := 'both work sensors agree -> Done (AND-combine)');
+    AssertTrue(Condition := _cm.OutImm.AtWork, Message := 'AtWork requires ALL work sensors');
+    _cm.Execute := FALSE; _cm();
+    TEST_FINISHED();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Discrepancy_faults" Id="{1c7893da-522b-455c-9d95-e297583bf04a}">
+      <Declaration><![CDATA[METHOD Discrepancy_faults]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// sensor1 makes after sim travel, sensor2 stuck -> split; one iteration per cycle.
+TEST('Discrepancy_faults');
+_cmD.Command := E_ConfigurableCylinderCommand.TO_WORK;
+_cmD.Execute := TRUE;
+_cmD(); _simD();
+_discScans := _discScans + 1;
+IF _cmD.Error OR (_discScans >= 100) THEN
+    AssertTrue(Condition := _cmD.Error, Message := 'persistent sensor disagreement faults');
+    AssertEquals_DWORD(Expected := TO_DWORD(PL_ModuleReasons.CYL_DISCREPANCY),
+                       Actual := _cmD.ErrorID, Message := 'discrepancy code 10116 (§8.8)');
+    TEST_FINISHED();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Sensorless_completes_on_time" Id="{f1792059-1060-46d0-85ab-7520dfd22100}">
+      <Declaration><![CDATA[METHOD Sensorless_completes_on_time]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// the CM's own TravelTime TON must elapse in real task time; one iteration per cycle.
+TEST('Sensorless_completes_on_time');
+_cmN.Command := E_ConfigurableCylinderCommand.TO_WORK;
+_cmN.Execute := TRUE;
+_cmN(); _simN();
+_noSensScans := _noSensScans + 1;
+IF _cmN.Done OR _cmN.Error OR (_noSensScans >= 100) THEN
+    AssertTrue(Condition := _cmN.Done, Message := 'sensorless work completes on travel time');
+    _cmN.Execute := FALSE; _cmN();
+    TEST_FINISHED();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Timeout_faults" Id="{ed795e41-2ef2-48fc-b1bb-973ef235ed81}">
+      <Declaration><![CDATA[METHOD Timeout_faults]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Timeout_faults');
+_cmT.ParCfg.MoveTimeout := T#0S;
+_cmT.Command := E_ConfigurableCylinderCommand.TO_WORK;
+_cmT.Execute := TRUE;
+_cmT(); _cmT();
+AssertTrue(Condition := _cmT.Error, Message := 'work not reached -> fault');
+AssertEquals_DWORD(Expected := TO_DWORD(PL_ModuleReasons.CYL_WORK_NOT_REACHED),
+                   Actual := _cmT.ErrorID, Message := 'work timeout code 10112');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

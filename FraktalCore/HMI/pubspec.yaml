@@ -1,0 +1,27 @@
+name: fraktal_hmi
+description: Fraktal generic operator HMI (Core 3.13 / HMI_CONTRACT.md) - Material 3, module-tree driven.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# Package exceptions are capability-scoped: Flutter's own locale delegates,
+# cross-platform file dialogs, and an embedded cross-platform PDF renderer.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  file_picker: ^11.0.2
+  pdfrx: ^2.4.7
+  cupertino_icons: ^1.0.9
+  # Native OPC UA bridge string/memory helpers (Dart SDK team package).
+  ffi: ^2.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

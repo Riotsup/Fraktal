@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_TcpCodeReaderCM" Id="{b1bc9a92-0769-4831-bfd5-3e5aa16ad66d}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.15.1a — CATEGORY CM: triggered TCP/ASCII code reader (barcode/DMC),
+// vendor-neutral. Configure for most readers; extend only for special features.
+// Optional match-code verification: ParCmd.MatchCode <> ''.
+// Publishes: ParCfg, ParCmd, OutCmd, OutImm. Feeds Annex E.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_TcpCodeReaderCM EXTENDS FB_AsciiDeviceCM
+VAR_INPUT
+    ParCfg : ST_TcpCodeReaderParCfg;
+    ParCmd : ST_TcpCodeReaderParCmd;
+END_VAR
+VAR_OUTPUT
+    OutCmd : ST_TcpCodeReaderOutCmd;
+    OutImm : ST_TcpCodeReaderOutImm;
+END_VAR
+VAR
+    _done : BOOL;
+    _sent : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{ac1cfb3e-9954-4498-a3b5-d63f56e90d34}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    Chan : I_ByteChannel;
+    DevHost : STRING(80);
+    DevPort : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+_M_PublishCommand(Value := 1, Label := 'std.command.triggerRead');
+ParCfg.Host := DevHost;
+ParCfg.Port := DevPort;
+Setup := SetupDevice(Chan := Chan, DevHost := DevHost, DevPort := DevPort);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{58132be9-bce0-4cf2-a954-f0ae56698fab}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _manualReq THEN
+    _manualReq := FALSE;
+    IF _manualCmd = 1 THEN
+        _sent := SendRequest(Text := ParCfg.TriggerCmd);
+        IF _sent THEN OutCmd.Code := ''; OutCmd.NoRead := FALSE; OutCmd.MatchOk := FALSE; END_IF
+    ELSE
+        _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedCodeReaderCommand');
+        RETURN;
+    END_IF
+END_IF
+IF Execute THEN
+    IF NOT _sent THEN
+        _M_TagCommand(Id := 1, Label := 'std.command.triggerRead');
+        _sent := SendRequest(Text := ParCfg.TriggerCmd);
+        IF _sent THEN
+            OutCmd.Code := '';
+            OutCmd.NoRead := FALSE;
+            OutCmd.MatchOk := FALSE;
+        END_IF
+    ELSIF _done THEN
+        _sent := FALSE;
+        _done := FALSE;
+        _M_Complete();
+    END_IF
+ELSE
+    _sent := FALSE;
+    _done := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{bfeb755f-013f-4175-b380-5b214a4fb3de}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+Host := ParCfg.Host;
+Port := ParCfg.Port;
+Terminator := ParCfg.Terminator;
+RespTimeout := ParCfg.RespTimeout;
+OutImm.LinkState := LinkState;
+OutImm.LastResponse := LastResponse;
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_OnResponse" Id="{d056d2a4-372d-461e-bca1-c988638cac87}">
+      <Declaration><![CDATA[// generic read parse: NoReadText or the decoded symbol; optional match verify.
+METHOD PROTECTED _M_OnResponse
+VAR_INPUT
+    Response : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OutCmd.NoRead := (Response = ParCfg.NoReadText);
+IF OutCmd.NoRead THEN OutCmd.Code := ''; END_IF
+IF NOT OutCmd.NoRead THEN
+    OutCmd.Code := Response;             // -> traceability (Annex E)
+END_IF
+IF ParCmd.MatchCode <> '' THEN
+    OutCmd.MatchOk := (NOT OutCmd.NoRead) AND (Response = ParCmd.MatchCode);
+ELSE
+    OutCmd.MatchOk := NOT OutCmd.NoRead;
+END_IF
+_done := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{3bcc626a-69d1-4efd-9b58-8e2d055bd98a}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

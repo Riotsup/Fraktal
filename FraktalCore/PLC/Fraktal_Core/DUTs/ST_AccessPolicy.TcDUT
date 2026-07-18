@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_AccessPolicy" Id="{b8c49447-68d9-4d65-b7cb-74f6149ccbc4}">
+    <Declaration><![CDATA[// Core §7.7(b) — per-station required level per action. SHIPPED DEFAULT: fully open
+// (NONE everywhere) — locking down is a deliberate deployment decision, reviewed at
+// commissioning (§14). Held as persistent station configuration (§3.8a).
+TYPE ST_AccessPolicy :
+STRUCT
+    Required       : ARRAY[0..10] OF E_AccessLevel;  // index = TO_INT(E_GatedAction)
+    SessionTimeout : TIME := T#0S;                   // idle auto-logout; T#0S = never
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

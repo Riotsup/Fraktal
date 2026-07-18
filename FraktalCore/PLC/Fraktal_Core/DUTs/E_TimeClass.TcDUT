@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_TimeClass" Id="{076c799d-fd80-4c7a-9094-23c05c04cb08}">
+    <Declaration><![CDATA[// Core §8.11.4(f) — classification of profiled time. WORK is the default; a wait
+// class is declared only on genuine external waits (never to hide process slowness).
+// WAIT_UPSTREAM/WAIT_DOWNSTREAM are the per-step attribution of §8.11.3 Starved/Blocked.
+{attribute 'qualified_only'}
+TYPE E_TimeClass :
+(
+    WORK            := 0,   // value-adding / process time (default)
+    WAIT_UPSTREAM   := 1,   // starved: awaiting next pallet/part/material (§8.11.3)
+    WAIT_DOWNSTREAM := 2,   // blocked: awaiting outfeed / downstream take-over (§8.11.3)
+    WAIT_OPERATOR   := 3,   // §6.11 decision / manual intervention
+    WAIT_EXTERNAL   := 4    // host/MES/tool response (§3.15, §11.6)
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressDemoUnit" Id="{5f21a307-9147-4e56-a693-b78707df35d5}" SpecialFunc="None">
+    <Declaration><![CDATA[// Project-owned Unit: pneumatic press + access door + transfer slide + two-hand request.
+// Cylinder interlocks prevent the two documented collisions in AUTO and MANUAL.
+// Certified E-stop, two-hand evaluation and safe valve outputs remain external.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_PressDemoUnit EXTENDS FB_UnitBase
+VAR_INPUT
+    ParCfg : ST_PneumaticPressParCfg;
+    ParCmd : ST_PneumaticPressParCmd;
+END_VAR
+VAR_OUTPUT
+    PressRam      : FB_CylinderCM;
+    Door          : FB_CylinderCM;
+    PartSlide     : FB_CylinderCM;
+    TwoHand       : FB_TwoHandStartCM;
+    PneumaticPower: FB_PowerGroupCM;
+    PartPresentSensor : FB_DigitalInputCM;
+    AirPressureMonitor : FB_AirPressureMonitorCM;
+    ReleaseConditions : FB_PressDemoRelease; // project-owned, browseable condition state
+    OutCmd        : ST_PneumaticPressOutCmd;
+    OutImm        : ST_PneumaticPressOutImm;
+END_VAR
+VAR
+    _recipe : I_RecipeProvider;
+    _parCfgStaged : ST_PneumaticPressParCfg;
+    _recipePrepared : BOOL;
+    _startLatched : BOOL;
+    _powerRequestPending : BOOL;
+    _powerTargetOn : BOOL;
+    {attribute 'OPC.UA.DA' := '0'}
+    _homeSequence : FB_PressDemoHome;       // §6.8 ST chain on FB_SequenceBase owns HOME steps
+    {attribute 'OPC.UA.DA' := '0'}
+    _changeoverSequence : FB_PressDemoChangeover;
+    {attribute 'OPC.UA.DA' := '0'}
+    _autoSequence : FB_PressDemoAuto;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Cyclic();]]></ST></Implementation>
+    <Method Name="Setup" Id="{c48eb9f5-2cef-457b-90cd-aa7b557e955a}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    PressHal : REFERENCE TO ST_CylinderHal;
+    DoorHal : REFERENCE TO ST_CylinderHal;
+    SlideHal : REFERENCE TO ST_CylinderHal;
+    TwoHandHal : REFERENCE TO ST_TwoHandHal;
+    PowerHal : REFERENCE TO ST_PowerGroupHal;
+    PartPresentHal : REFERENCE TO ST_DigitalInputHal;
+    AirPressureHal : REFERENCE TO ST_AirPressureHal;
+    Recipe : I_RecipeProvider;
+END_VAR
+VAR
+    InitialModel : ST_ModelId;
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'project.module.pneumaticPress.name', DescriptionKey := 'project.module.pneumaticPress.description');
+_recipe := Recipe;
+Ok := PressRam.Setup(Name := CONCAT(Name, '.PressRam'), HalRef := PressHal, Recipe := 0);
+Ok := Door.Setup(Name := CONCAT(Name, '.Door'), HalRef := DoorHal, Recipe := 0) AND Ok;
+Ok := PartSlide.Setup(Name := CONCAT(Name, '.PartSlide'), HalRef := SlideHal, Recipe := 0) AND Ok;
+Ok := TwoHand.Setup(Name := CONCAT(Name, '.TwoHand'), HalRef := TwoHandHal) AND Ok;
+Ok := PneumaticPower.Setup(Name := CONCAT(Name, '.PneumaticPower'), HalRef := PowerHal) AND Ok;
+Ok := PartPresentSensor.Setup(Name := CONCAT(Name, '.PartPresentSensor'),
+    HalRef := PartPresentHal, DisplayNameKey := 'project.module.partPresentSensor.name',
+    DescriptionKey := 'project.module.partPresentSensor.description') AND Ok;
+Ok := AirPressureMonitor.Setup(Name := CONCAT(Name, '.AirPressureMonitor'),
+    HalRef := AirPressureHal) AND Ok;
+Ok := ReleaseConditions.Setup(UnitPath := Name) AND Ok;
+Ok := _homeSequence.Setup(Host := THIS^, PressRam := PressRam, Door := Door,
+    PartSlide := PartSlide, OutCmd := OutCmd) AND Ok;
+Ok := _changeoverSequence.Setup(Host := THIS^, PressRam := PressRam, Door := Door,
+    PartSlide := PartSlide, OutCmd := OutCmd, Model := Model) AND Ok;
+Ok := _autoSequence.Setup(Host := THIS^, PressRam := PressRam, Door := Door,
+    PartSlide := PartSlide, TwoHand := TwoHand, PartPresentSensor := PartPresentSensor,
+    AirPressureMonitor := AirPressureMonitor, ParCfg := ParCfg, OutCmd := OutCmd,
+    StartLatched := _startLatched) AND Ok;
+PneumaticPower.ParCfg.Kind := E_PowerGroupKind.VALVE_ZONE;
+PneumaticPower.ParCfg.RequiredForControl := TRUE;
+PneumaticPower.ParCfg.FieldbusLossReaction := E_FieldbusLossReaction.CONTROL_OFF;
+Ok := _M_Register(PressRam) AND Ok;
+Ok := _M_Register(Door) AND Ok;
+Ok := _M_Register(PartSlide) AND Ok;
+Ok := _M_Register(TwoHand) AND Ok;
+Ok := _M_Register(PneumaticPower) AND Ok;
+Ok := _M_Register(PartPresentSensor) AND Ok;
+Ok := _M_Register(AirPressureMonitor) AND Ok;
+Setup := Ok AND PrepareRecipe(Model := InitialModel);
+IF Setup THEN CommitRecipe(); END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{26cc04a2-9628-4f16-837b-581094bb7ca0}">
+      <Declaration><![CDATA[METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _recipe = 0 THEN
+    _parCfgStaged := ParCfg;
+    _recipePrepared := TRUE;
+ELSIF _recipe.Load(ModelCode := Model.ModelCode, RecipeKey := 'PneumaticPressUnit', pParCfg := ADR(_parCfgStaged), Size := SIZEOF(_parCfgStaged)) THEN
+    IF (_parCfgStaged.PressSettleTime > T#30S) OR (_parCfgStaged.TransferSettleTime > T#5S) THEN
+        _M_Fault(E_Reason.RECIPE_INVALID, 'project.error.pressRecipeInvalid');
+        _recipePrepared := FALSE;
+        PrepareRecipe := FALSE;
+        RETURN;
+    END_IF
+    _recipePrepared := TRUE;
+ELSE
+    _M_Fault(E_Reason.RECIPE_INVALID, 'std.error.recipeSchemaInvalid');
+    _recipePrepared := FALSE;
+    PrepareRecipe := FALSE;
+    RETURN;
+END_IF
+PrepareRecipe := SUPER^.PrepareRecipe(Model := Model);
+IF NOT PrepareRecipe THEN _recipePrepared := FALSE; END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{f0ca16c3-542f-49c8-a671-1b9e899cb831}">
+      <Declaration><![CDATA[METHOD CommitRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^.CommitRecipe();
+IF _recipePrepared THEN
+    ParCfg := _parCfgStaged;
+    // §8.11 performance references follow the model: OEE Performance denominator
+    // and the WORK-time degradation baseline are per-recipe engineering data.
+    Oee.IdealCycleMs := ParCfg.IdealCycleMs;
+    Profiler.M_SetBaselineWork(WorkMs := ParCfg.BaselineWorkMs);
+END_IF
+_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{a113eb9d-e81d-4099-a6a9-7426558bed78}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^.AbortRecipe();
+_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{f9b92ad7-f0eb-4fb6-b68a-ce349991589d}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+// Project release engineering is a separate visible component. It owns the
+// functional collision permits and mode-entry conditions consumed below.
+ReleaseConditions.M_Evaluate(PressRam := PressRam, Door := Door, PartSlide := PartSlide,
+    TwoHand := TwoHand, PneumaticPower := PneumaticPower,
+    AirPressure := AirPressureMonitor);
+
+// Latch access-gated Unit requests, then observe one full Execute-low scan before
+// starting another power-group command (PLCopen edge discipline).
+IF ControlOffRequest THEN
+    _powerTargetOn := FALSE;
+    _powerRequestPending := TRUE;
+ELSIF ControlOnRequest THEN
+    _powerTargetOn := TRUE;
+    _powerRequestPending := TRUE;
+END_IF
+IF PneumaticPower.Done OR PneumaticPower.Error OR PneumaticPower.Aborted THEN
+    PneumaticPower.Execute := FALSE;
+ELSIF _powerRequestPending AND NOT PneumaticPower.Execute
+AND (PneumaticPower.State = E_ExecState.READY) THEN
+    PneumaticPower.Abort := FALSE;
+    IF _powerTargetOn THEN
+        PneumaticPower.Command := E_PowerGroupCommand.POWER_ON;
+    ELSE
+        PneumaticPower.Command := E_PowerGroupCommand.POWER_OFF;
+    END_IF
+    PneumaticPower.Execute := TRUE;
+    _powerRequestPending := FALSE;
+END_IF
+
+// A physical two-hand edge may start AUTO from READY, or release an already
+// running Unit's wait step. It never bypasses domain readiness or access policy.
+IF TwoHand.OutImm.StartPulse
+AND PartPresentSensor.OutImm.Value AND PartPresentSensor.OutImm.Quality
+AND AirPressureMonitor.OutImm.PressureOk THEN
+    IF (State = E_ExecState.BUSY) AND (ModeActive = E_Mode.AUTO) THEN
+        _startLatched := TRUE;
+    ELSIF (ModeActive = E_Mode.AUTO) AND Start() THEN
+        _startLatched := TRUE;
+    END_IF
+ELSIF TwoHand.OutImm.StartPulse THEN
+    _startLatched := FALSE;
+END_IF
+IF PneumaticPower.Error AND (State = E_ExecState.BUSY) THEN
+    _M_RollupFault();
+END_IF
+IF (State = E_ExecState.BUSY) AND (_step > 10)
+AND NOT AirPressureMonitor.OutImm.PressureOk THEN
+    PressRam.WithdrawOutputs();
+    Door.WithdrawOutputs();
+    PartSlide.WithdrawOutputs();
+    _M_Fault(E_Reason.PERMISSIVE_NOT_MET, 'project.error.pressAirPressureLost');
+END_IF
+OutImm.PressRetracted := PressRam.OutImm.Retracted;
+OutImm.DoorOpen := Door.OutImm.Retracted;
+OutImm.DoorClosed := Door.OutImm.Extended;
+OutImm.SlideInside := PartSlide.OutImm.Extended;
+OutImm.SlideOutside := PartSlide.OutImm.Retracted;
+OutImm.TwoHandArmed := TwoHand.OutImm.Armed;
+OutImm.TwoHandActive := TwoHand.OutImm.SafeActive;
+OutImm.PartPresent := PartPresentSensor.OutImm.Value AND PartPresentSensor.OutImm.Quality;
+OutImm.AirPressureOk := AirPressureMonitor.OutImm.PressureOk;
+OutImm.ReadyForLoad := Door.OutImm.Retracted AND NOT Door.OutImm.Extended
+    AND PartSlide.OutImm.Retracted AND NOT PartSlide.OutImm.Extended
+    AND PressRam.OutImm.Retracted AND NOT PressRam.OutImm.Extended;
+OutImm.ActiveSettleTime := ParCfg.PressSettleTime;
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnAbort" Id="{946299b7-20f3-4f8e-8bce-a4a3c6398824}">
+      <Declaration><![CDATA[METHOD PROTECTED OnAbort : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnAbort := SUPER^.OnAbort();
+_M_PartAborted();                    // §3.16.3: the part leaves without a valid result
+PressRam.WithdrawOutputs();
+Door.WithdrawOutputs();
+PartSlide.WithdrawOutputs();
+PressRam.Execute := FALSE;
+Door.Execute := FALSE;
+PartSlide.Execute := FALSE;
+Decision.Prompt := '';
+DecisionAnswer := 0;
+_startLatched := FALSE;
+_homeSequence.M_Reset();
+_changeoverSequence.M_Reset();
+_autoSequence.M_Reset();
+_powerTargetOn := FALSE;
+_powerRequestPending := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="RequestLocalControl" Id="{97203594-7e58-492f-b019-18924525747e}">
+      <Declaration><![CDATA[// Application-only seam for ordinary hardwired Control On/Off buttons.
+// It is a method (not OPC UA data), so HMI writes still use the access-gated
+// ReqControlOn/ReqControlOff contract. The power CM rechecks safety and health.
+METHOD RequestLocalControl : BOOL
+VAR_INPUT
+    ControlOn : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_powerTargetOn := ControlOn;
+_powerRequestPending := TRUE;
+RequestLocalControl := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_SupportsRunStyle" Id="{3d92c7a1-64b8-4f5e-8a20-c1e57b30d846}">
+      <Declaration><![CDATA[// §3.4.2 — the press paces every motion boundary through _M_StepGate, so
+// SINGLE_STEP and HOLD_TO_RUN are supported (NON-SAFETY pacing; interlocks
+// and the certified safety layer are unaffected).
+METHOD PROTECTED _M_SupportsRunStyle : BOOL
+VAR_INPUT
+    Style : E_RunStyle;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SupportsRunStyle := (Style = E_RunStyle.CONTINUOUS)
+    OR (Style = E_RunStyle.SINGLE_STEP) OR (Style = E_RunStyle.HOLD_TO_RUN);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Supports" Id="{51b90e84-71fd-47fb-a133-d29df50af97d}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Supports : BOOL
+VAR_INPUT
+    Mode : E_Mode;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Supports := (Mode = E_Mode.AUTO) OR (Mode = E_Mode.MANUAL)
+    OR (Mode = E_Mode.HOME) OR (Mode = E_Mode.CHANGEOVER);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{cc2817fc-d9b1-4ed1-bbfd-50983067ea35}">
+      <Declaration><![CDATA[// Thin mode router. Each supported sequence is a named method in the Unit tree.
+METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation><ST><![CDATA[CASE ModeActive OF
+    E_Mode.AUTO:
+        _M_SequenceAuto();
+    E_Mode.HOME:
+        _M_SequenceHome();
+    E_Mode.CHANGEOVER:
+        _M_SequenceChangeover();
+    E_Mode.MANUAL:
+        _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'project.error.pressManualHasNoSequence');
+ELSE
+    _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'project.error.pressModeHasNoSequence');
+END_CASE]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_SequenceHome" Id="{ed834a64-57bd-4fe5-a5c0-ce16cdd2143a}">
+      <Declaration><![CDATA[// HOME adapter: reset the chain on the first dispatch scan, then run it each scan.
+// The §6.8 ST chain (FB_PressDemoHome) owns all HOME step logic.
+METHOD PROTECTED _M_SequenceHome]]></Declaration>
+      <Implementation><ST><![CDATA[CASE _step OF
+    10:
+        _homeSequence.M_Reset();
+        _step := 20;
+    20:
+        _homeSequence.M_Run();
+ELSE
+    PressRam.WithdrawOutputs();
+    Door.WithdrawOutputs();
+    PartSlide.WithdrawOutputs();
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_SequenceChangeover" Id="{b1464a9c-e4ea-4d66-8478-3947059ff94c}">
+      <Declaration><![CDATA[// CHANGEOVER adapter: reset then run. The §6.8 ST chain owns model validation,
+// safe positioning, the operator decision, and completion logic.
+METHOD PROTECTED _M_SequenceChangeover]]></Declaration>
+      <Implementation><ST><![CDATA[CASE _step OF
+    10:
+        _changeoverSequence.M_Reset();
+        _step := 20;
+    20:
+        _changeoverSequence.M_Run();
+ELSE
+    PressRam.WithdrawOutputs();
+    Door.WithdrawOutputs();
+    PartSlide.WithdrawOutputs();
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_SequenceAuto" Id="{b1aa9e5f-1282-4e96-92a6-ed37b454daaa}">
+      <Declaration><![CDATA[// AUTO adapter: reset then run. Every production step's command, wait, timer,
+// decision, traceability, and transition logic lives in the §6.8 ST chain.
+METHOD PROTECTED _M_SequenceAuto]]></Declaration>
+      <Implementation><ST><![CDATA[CASE _step OF
+    10:
+        _autoSequence.M_Reset();
+        _step := 20;
+    20:
+        _autoSequence.M_Run();
+ELSE
+    PressRam.WithdrawOutputs();
+    Door.WithdrawOutputs();
+    PartSlide.WithdrawOutputs();
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+
+    <Method Name="_M_RouteManual" Id="{653016fc-4fc6-4987-b1a0-1cd3e2828844}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_RouteManual : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_RouteManual := FALSE;
+IF TargetPath = PressRam.Name THEN
+    _M_RouteManual := PressRam.ManualCommand(Value := Value);
+ELSIF TargetPath = Door.Name THEN
+    _M_RouteManual := Door.ManualCommand(Value := Value);
+ELSIF TargetPath = PartSlide.Name THEN
+    _M_RouteManual := PartSlide.ManualCommand(Value := Value);
+ELSE
+    _M_RouteManual := FALSE;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_AppendInterlocks" Id="{9d306c75-af96-45fa-b6f4-fc1be7a8f3a0}">
+      <Declaration><![CDATA[// §7.8 mode-entry release owned by this Unit. The base Start method consumes the
+// same report the HMI displays, so this condition cannot become explanation-only.
+METHOD PROTECTED _M_AppendInterlocks
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ReleaseConditions.M_AppendStart(Report := Report);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_AppendManualInterlocks" Id="{35af721a-a6ca-4323-a3cf-ed754f60575f}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_AppendManualInterlocks
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ReleaseConditions.M_AppendManual(TargetPath := TargetPath, Value := Value,
+    PressRam := PressRam, Door := Door, PartSlide := PartSlide, Report := Report);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{0aec4f4a-7433-497b-8fb9-a69b8a633711}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

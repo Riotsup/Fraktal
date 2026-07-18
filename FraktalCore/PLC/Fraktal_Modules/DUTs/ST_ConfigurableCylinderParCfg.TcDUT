@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ConfigurableCylinderParCfg" Id="{13454b14-35ee-4252-a447-683d9a83247b}">
+    <Declaration><![CDATA[// Core §3.8 ParCfg (SchemaVersion first). Basic cylinder with optional, possibly
+// REDUNDANT, position sensors. Values live in the module that needs them (§3.8a).
+TYPE ST_ConfigurableCylinderParCfg :
+STRUCT
+    SchemaVersion     : UINT := 1;
+
+    // --- optional & redundant sensors ---
+    // count of sensors wired for each position: 0 = sensorless (time-based),
+    // 1 = single, 2 = duplex (AND-combined), up to PL_Fraktal.MAX_POS_SENSORS.
+    HomeSensorCount   : INT := 1;
+    WorkSensorCount   : INT := 1;
+
+    // --- timing ---
+    MoveTimeout       : TIME := T#5S;    // max movement time (default 5 s)
+    SettleTime        : TIME := T#30MS;  // debounce before a move is declared done
+    TravelTime        : TIME := T#1S;    // sensorless travel assumption (< MoveTimeout)
+    DiscrepancyTime   : TIME := T#500MS; // how long redundant sensors may disagree before fault
+
+    // --- behaviour ---
+    SingleActing      : BOOL := FALSE;   // TRUE: only ToWorkOut driven; spring return home
+    SafePosOnAbort    : E_CylinderPosition := E_CylinderPosition.HOME;
+    DeenergizeOnAbort : BOOL := TRUE;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

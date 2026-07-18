@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ProbeEM" Id="{e9634785-d15e-474b-9ba6-1905d89ee3da}" SpecialFunc="None">
+    <Declaration><![CDATA[// Minimal concrete EM probe: two probe-CM children, one command = both complete.
+// Exercises _M_Register / _M_TickChildren / _M_RollupFault (Core §8.2, row T6 at base level).
+FUNCTION_BLOCK FB_ProbeEM EXTENDS FB_EquipmentModuleBase
+VAR_OUTPUT
+    ChildA : FB_ProbeCM;
+    ChildB : FB_ProbeCM;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{98a58608-86d0-47c5-bff5-98568c86b012}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+ChildA.Setup(CONCAT(Name, '.ChildA'));
+ChildB.Setup(CONCAT(Name, '.ChildB'));
+_M_Register(ChildA);
+_M_Register(ChildB);
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="TestSetChildren" Id="{14ce9f97-f13d-42bc-87ab-853f0e2fc432}">
+      <Declaration><![CDATA[// Test injection stays inside the owning FB; callers cannot write through a child VAR_OUTPUT.
+METHOD TestSetChildren : BOOL
+VAR_INPUT
+    ChildADone : BOOL;
+    ChildAFault : BOOL;
+    ChildBDone : BOOL;
+    ChildBFault : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ChildA.SimDone := ChildADone;
+ChildA.SimFault := ChildAFault;
+ChildB.SimDone := ChildBDone;
+ChildB.SimFault := ChildBFault;
+TestSetChildren := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{67d8889b-bed5-46fb-b04b-a189ee0d49b3}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();   // base first (Core §3.14.2)
+_M_TickChildren();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{ab056f41-edbe-4b51-9440-8f3f6ed7bf34}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE _step OF
+    10:  // command both children (parallel fork, Core §6.10)
+        ChildA.Execute := TRUE;
+        ChildB.Execute := TRUE;
+        _step := 20;
+    20:  // join on both Done — or roll up the first child Error (Core §8.2)
+        IF ChildA.Error OR ChildB.Error THEN
+            _M_RollupFault();
+            ChildA.Execute := FALSE;
+            ChildB.Execute := FALSE;
+        ELSIF ChildA.Done AND ChildB.Done THEN
+            ChildA.Execute := FALSE;
+            ChildB.Execute := FALSE;
+            _M_Complete();
+        END_IF
+ELSE
+    _M_Fault(E_Reason.STEP_STALLED, 'undefined step');   // defined ELSE, Core §5.6
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

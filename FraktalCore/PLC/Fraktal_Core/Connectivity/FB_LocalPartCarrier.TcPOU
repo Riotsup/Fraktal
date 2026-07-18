@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_LocalPartCarrier" Id="{9d3f7a24-6c1e-4b8f-a6b2-52e0d1c47a91}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.16.2 — DEFAULT local carrier: BY_POSITION identity for stations without
+// RFID/scanner/host. ReadContext assigns the next station-local serial from a
+// configured prefix; WriteResult keeps a bounded ring of produced results so the
+// HMI/MES adapter can collect them. RFID/DataMatrix/host carriers substitute
+// behind I_PartCarrier later (the recipe-provider pattern, §3.8).
+FUNCTION_BLOCK FB_LocalPartCarrier IMPLEMENTS I_PartCarrier
+VAR_OUTPUT
+    Produced     : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF ST_PartResult; // last results ring
+    ProducedHead : INT;                                               // newest entry (0 = none)
+    ProducedUids : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF STRING(64);
+END_VAR
+VAR
+    _prefix : STRING(40);
+    _serial : UDINT;
+    _configured : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// no cyclic body]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{4f1a8f2e-88c4-4c11-b7a4-e30f92d94b17}">
+      <Declaration><![CDATA[// commissioning-time identity scheme: serials are '<UidPrefix><counter>'.
+METHOD Setup : BOOL
+VAR_INPUT
+    UidPrefix : STRING(40);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF UidPrefix = '' THEN
+    Setup := FALSE;
+    RETURN;
+END_IF
+_prefix := UidPrefix;
+_configured := TRUE;
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ReadContext" Id="{b7e2c9d0-5a1f-4c53-9e88-1f60ab34c2d5}">
+      <Declaration><![CDATA[// BY_POSITION: the station itself is the identity authority — assign the next
+// serial when no Uid is carried yet. FALSE only when unconfigured (§3.16.2:
+// the caller faults CARRIER_READ_FAILED; never a silent continue).
+METHOD ReadContext : BOOL
+VAR_IN_OUT
+    Ctx : ST_PartContext;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT _configured THEN
+    ReadContext := FALSE;
+    RETURN;
+END_IF
+IF Ctx.Uid = '' THEN
+    _serial := _serial + 1;
+    Ctx.Uid := CONCAT(_prefix, UDINT_TO_STRING(_serial));
+END_IF
+Ctx.Present := TRUE;
+Ctx.CarrierKind := E_CarrierKind.BY_POSITION;
+ReadContext := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="WriteResult" Id="{c4d81f5b-2e97-4b0a-8a31-7d5c20e94af3}">
+      <Declaration><![CDATA[// keep the produced result locally (bounded ring, newest at ProducedHead).
+METHOD WriteResult : BOOL
+VAR_INPUT
+    Ctx : ST_PartContext;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT _configured THEN
+    WriteResult := FALSE;
+    RETURN;
+END_IF
+ProducedHead := ProducedHead + 1;
+IF ProducedHead > PL_Fraktal.MAX_RECIPES THEN
+    ProducedHead := 1;
+END_IF
+Produced[ProducedHead] := Ctx.Result;
+ProducedUids[ProducedHead] := Ctx.Uid;
+WriteResult := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

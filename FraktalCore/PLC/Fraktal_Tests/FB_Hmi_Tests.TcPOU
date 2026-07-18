@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Hmi_Tests" Id="{ddeeaa5c-8a07-48ff-a3b7-d25994435712}" SpecialFunc="None">
+    <Declaration><![CDATA[// §3.10(a') under test: the data mirror IS the HMI contract — proven once.
+FUNCTION_BLOCK FB_Hmi_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _p : FB_ProbeCM;
+    _u : FB_ProbeUnit;
+    _mailboxUnit : FB_ProbeUnit;
+    _mailboxInit : BOOL;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Status_mirror_carries_name_state_and_diag();
+Unit_publishes_counters_and_history();
+Nameplate_roundtrip();
+Mailbox_commits_once_and_acknowledges();]]></ST>
+    </Implementation>
+    <Method Name="Status_mirror_carries_name_state_and_diag" Id="{9f585fa2-c3b4-4a24-bbb7-c7f5aa8b5400}">
+      <Declaration><![CDATA[METHOD Status_mirror_carries_name_state_and_diag]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Status_mirror_carries_name_state_and_diag');
+IF NOT _w THEN
+    _p.Setup('Test.Mirror');
+    _u.Setup('Test.MirrorUnit');
+    _w := TRUE;
+END_IF
+AssertEquals_STRING(Expected := 'Test.Mirror', Actual := _p.Status.Name,
+                    Message := 'mirror carries the browse name (3.10a$')');
+_p.Execute := TRUE;
+_p.SimFault := TRUE;
+_p();
+AssertEquals_DINT(Expected := TO_DINT(E_ExecState.ERROR),
+                  Actual   := TO_DINT(_p.Status.State),
+                  Message  := 'mirror state follows ExecState');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.TEST_FAULT),
+                   Actual   := TO_DWORD(_p.Status.Diagnostic.ReasonCode),
+                   Message  := 'live diagnostic published as DATA (6.9a)');
+AssertTrue(Condition := _p.Status.FaultActive, Message := 'mirror fault flag');
+_p.Execute := FALSE;
+_p.SimFault := FALSE;
+_p();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Unit_publishes_counters_and_history" Id="{eed4b529-88a1-44ba-8b75-cb092ce86590}">
+      <Declaration><![CDATA[METHOD Unit_publishes_counters_and_history]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Unit_publishes_counters_and_history');
+_u.CountGood();
+_u.CountGood();
+_u.CountNok();
+AssertEquals_UDINT(Expected := 2, Actual := _u.GoodCount, Message := 'good counter (8.11)');
+AssertEquals_UDINT(Expected := 1, Actual := _u.NokCount,  Message := 'nok counter (8.11)');
+// stall pending surfaces on the mirror while no fault is active (6.9/3.10a')
+AssertTrue(Condition := _u.Start(), Message := 'start');
+_u();
+_u();                                        // StallTime T#0S -> pending
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.STEP_STALLED),
+                   Actual   := TO_DWORD(_u.Status.Diagnostic.ReasonCode),
+                   Message  := 'pending stall visible on the data mirror');
+_u.Stop();
+_u.SimA := TRUE;
+_u.SimB := TRUE;
+_u();
+_u();
+_u();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Nameplate_roundtrip" Id="{6746f045-8a15-4c5b-a8c9-e189dbcd69a1}">
+      <Declaration><![CDATA[// §3.10.1: SetNameplate persists identity; published for the HMI facet card
+METHOD Nameplate_roundtrip
+VAR
+    plate : ST_Nameplate;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Nameplate_roundtrip');
+plate.ManufacturerName := 'ACME';
+plate.SerialNumber := 'SN-1';
+_p.SetNameplate(Plate := plate);
+AssertEquals_STRING(Expected := 'ACME', Actual := _p.Nameplate.ManufacturerName, Message := 'manufacturer persists');
+AssertEquals_STRING(Expected := 'SN-1', Actual := _p.Nameplate.SerialNumber, Message := 'serial persists');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Mailbox_commits_once_and_acknowledges" Id="{cc495ad9-bbd4-4bba-a9a6-b1ca9fb06551}">
+      <Declaration><![CDATA[// §3.10(a″): arguments are sampled only when Sequence changes; Ack is last.
+METHOD Mailbox_commits_once_and_acknowledges]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Mailbox_commits_once_and_acknowledges');
+IF NOT _mailboxInit THEN
+    _mailboxUnit.Setup('Test.MailboxUnit');
+    _mailboxInit := TRUE;
+ELSE
+    _mailboxInit := _mailboxInit;
+END_IF
+_mailboxUnit.HmiRequest.Kind := E_HmiRequestKind.SET_MODE;
+_mailboxUnit.HmiRequest.IntValue := TO_DINT(E_Mode.MANUAL);
+_mailboxUnit.HmiRequest.Sequence := 1;
+_mailboxUnit();
+AssertEquals_UDINT(Expected := 1, Actual := _mailboxUnit.HmiResponse.AckSequence,
+    Message := 'committed sequence acknowledged');
+AssertTrue(Condition := _mailboxUnit.HmiResponse.Accepted,
+    Message := 'existing gated SetMode path accepted');
+AssertEquals_DINT(Expected := TO_DINT(E_Mode.MANUAL),
+    Actual := TO_DINT(_mailboxUnit.ModeActivePublished),
+    Message := 'property-only mode is published as OPC UA data');
+
+// Change arguments without changing Sequence: the transaction shall not replay.
+_mailboxUnit.HmiRequest.IntValue := TO_DINT(E_Mode.AUTO);
+_mailboxUnit();
+AssertEquals_DINT(Expected := TO_DINT(E_Mode.MANUAL),
+    Actual := TO_DINT(_mailboxUnit.ModeActivePublished),
+    Message := 'unchanged sequence is ignored');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

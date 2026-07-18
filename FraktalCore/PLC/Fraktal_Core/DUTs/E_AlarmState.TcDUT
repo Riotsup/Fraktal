@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_AlarmState" Id="{d5051f2a-8dc7-4459-b4b1-f8e3be43f721}">
+    <Declaration><![CDATA[// Core §8.3(b) lifecycle (ISA-18.2 mapping per §8.3(e))
+{attribute 'qualified_only'}
+TYPE E_AlarmState : (CLOSED := 0, ACTIVE := 1, WAIT_RESET := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

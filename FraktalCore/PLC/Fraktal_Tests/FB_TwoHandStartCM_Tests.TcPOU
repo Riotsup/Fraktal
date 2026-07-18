@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_TwoHandStartCM_Tests" Id="{b2645b4c-e8bf-4913-a40d-3808da3e9515}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TwoHandStartCM_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    Device : FB_TwoHandStartCM;
+    Hal : ST_TwoHandHal;
+    Wired : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Release_is_required_between_start_edges();]]></ST></Implementation>
+    <Method Name="Release_is_required_between_start_edges" Id="{57c8f489-8eb5-4349-af08-ef08c178a3d6}">
+      <Declaration><![CDATA[METHOD Release_is_required_between_start_edges]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Release_is_required_between_start_edges');
+IF NOT Wired THEN
+    Device.Setup(Name := 'Test.TwoHand', HalRef := Hal);
+    Hal.FieldbusHealthy := TRUE;
+    Wired := TRUE;
+END_IF
+Hal.LeftPressed := FALSE; Hal.RightPressed := FALSE; Hal.SafeActive := FALSE;
+Device();
+AssertTrue(Condition := Device.OutImm.Armed, Message := 'both released arms the functional edge');
+Hal.LeftPressed := TRUE; Hal.RightPressed := TRUE; Hal.SafeActive := TRUE;
+Device();
+AssertTrue(Condition := Device.OutImm.StartPulse, Message := 'certified result rising creates one functional pulse');
+Device();
+AssertFalse(Condition := Device.OutImm.StartPulse, Message := 'held buttons do not repeat the pulse');
+Hal.LeftPressed := FALSE; Hal.RightPressed := FALSE; Hal.SafeActive := FALSE;
+Device();
+AssertTrue(Condition := Device.OutImm.Armed, Message := 'release rearms the next cycle');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_PowerGroupKind" Id="{c050fa72-fa34-455f-8d19-598591e3d037}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_PowerGroupKind : (CONTROL := 0, VALVE_ZONE := 1, DRIVE_GROUP := 2,
+    HEATER := 3, PROCESS_ENERGY := 4, AUXILIARY := 5) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

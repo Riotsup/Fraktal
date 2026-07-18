@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_StepRecord" Id="{5bb20e29-8326-4920-aedc-f6f3358774f5}">
+    <Declaration><![CDATA[// Core §6.5 — what the stall walk reads
+TYPE ST_StepRecord :
+STRUCT
+    StepNo        : INT;
+    StepName      : STRING(120);   // localization key
+    AwaitingLabel : STRING(120);   // e.g. 'ClampStation.CLAMP' ('' if none)
+    Class         : E_TimeClass;   // Core §8.11.4(f) — WORK unless a genuine wait
+    ExpectedTime  : TIME;          // defaults from the awaited command's timeout
+    Conds         : ARRAY[1..PL_Fraktal.MAX_STEP_CONDS] OF ST_CondRecord;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

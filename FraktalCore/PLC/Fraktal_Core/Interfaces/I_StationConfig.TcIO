@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_StationConfig" Id="{9016aa9e-adb5-4333-9fba-00507fbd3eb3}">
+    <Declaration><![CDATA[// Core §3.8a — persistent STATION configuration (deployment-fixed, NOT model-keyed):
+// MES endpoint, scanner baud, scale calibration, etc. Same injection shape as
+// I_RecipeProvider so a module consumes config without embedding transport, and the
+// framework ships a local default (FB_LocalStationConfig). Distinct from recipe data:
+// station config does not change at changeover and is never bundled into a model recipe.
+INTERFACE I_StationConfig]]></Declaration>
+    <Method Name="Load" Id="{6f708342-5157-4f8f-885d-bf96676e1819}">
+      <Declaration><![CDATA[// fills the caller's StationCfg; FALSE => caller handles the miss (default = compiled)
+METHOD Load : BOOL
+VAR_INPUT
+    Key   : STRING;
+    pCfg  : PVOID;
+    Size  : UDINT;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="Store" Id="{b3373007-43ed-4327-9b91-a8f0d7971acf}">
+      <Declaration><![CDATA[// persist an edited StationCfg back (HMI/asset-system writes); FALSE = rejected
+METHOD Store : BOOL
+VAR_INPUT
+    Key   : STRING;
+    pCfg  : PVOID;
+    Size  : UDINT;
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

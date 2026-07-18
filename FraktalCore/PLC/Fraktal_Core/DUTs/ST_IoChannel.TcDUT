@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_IoChannel" Id="{bf146261-16a7-49b7-9943-e2d2b4ee50a5}">
+    <Declaration><![CDATA[// Core §10.5.1 — one fieldbus I/O channel (published for the topology view §3.13)
+TYPE ST_IoChannel :
+STRUCT
+    Name       : STRING(80);
+    DescriptionKey : STRING(160); // project/standard localization key
+    Address    : STRING(80);    // physical locator, e.g. EL1809 Ch5
+    Path       : STRING(255);   // unique channel path (force/audit identity)
+    ModulePath : STRING(255);   // owning module browse path for cross-navigation
+    Dir        : E_ChannelDir;
+    Kind       : E_ChannelKind;
+    BoolValue  : BOOL;          // digital
+    AnalogValue: REAL;          // analog (scaled)
+    Unit       : STRING(16);
+    Forced     : BOOL;
+    Quality    : BOOL;          // TRUE = good
+    FaultActive: BOOL;          // a module diagnostic implicates this exact channel
+    Diagnostic : STRING(255);   // localization key; Name remains the exact I/O tag
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

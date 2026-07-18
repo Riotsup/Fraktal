@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ClampParCfg" Id="{d7d0b6a3-bb10-49c7-bc76-b24fe422067a}">
+    <Declaration><![CDATA[TYPE ST_ClampParCfg :
+STRUCT
+    SchemaVersion : UINT := 1;
+    SettleTime    : TIME := T#150MS;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

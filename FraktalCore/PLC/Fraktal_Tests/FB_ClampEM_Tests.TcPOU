@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ClampEM_Tests" Id="{8ee95e59-52d8-491d-a99b-3c107bad4386}" SpecialFunc="None">
+    <Declaration><![CDATA[// Annex H §H.5 — the cross-tier rollup: EM adopts the child's first-out verbatim.
+FUNCTION_BLOCK FB_ClampEM_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _em : FB_ClampEM;
+    _hA, _hB : ST_CylinderHal;
+    _simA : FB_CylinderSim;
+    _pr : FB_LocalRecipeProvider;
+    _bCyl : ST_CylinderParCfg;
+    _bClamp : ST_ClampParCfg;
+    _d : ST_Diagnostic;
+    _w : BOOL;
+    _i : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _bCyl.MoveTimeout := T#0S;               // CylB times out deterministically
+    _bClamp.SettleTime := T#0S;
+    _pr.Register(ModelCode := '', RecipeKey := 'CylinderCM', pData := ADR(_bCyl), Size := SIZEOF(_bCyl));
+    _pr.Register(ModelCode := '', RecipeKey := 'ClampEM', pData := ADR(_bClamp), Size := SIZEOF(_bClamp));
+    _em.Setup(Name := 'ClampStation', HalA := _hA, HalB := _hB, Recipe := _pr);
+    _simA.Setup(HalRef := _hA, TravelTime := T#0S);
+    _w := TRUE;
+END_IF
+Clamp_rolls_up_CylB_first_out();]]></ST>
+    </Implementation>
+    <Method Name="Clamp_rolls_up_CylB_first_out" Id="{4354489a-a043-42c7-a2e4-125dede2c33b}">
+      <Declaration><![CDATA[METHOD Clamp_rolls_up_CylB_first_out]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Clamp_rolls_up_CylB_first_out');
+_em.Command := E_ClampCommand.CLAMP;
+_em.Execute := TRUE;
+FOR _i := 1 TO 6 DO
+    _em();                                   // EM ticks children in OnCyclic
+    _simA();                                 // plant completes CylA; CylB never arrives
+END_FOR
+AssertTrue(Condition := _em.Error, Message := 'EM faults on child error');
+_d := _em.GetFaultSummary();
+AssertEquals_DWORD(Expected := TO_DWORD(PL_ModuleReasons.CYL_NOT_EXTENDED),
+                   Actual   := TO_DWORD(_d.ReasonCode),
+                   Message  := 'EM adopts the child first-out verbatim (8.2)');
+AssertEquals_STRING(Expected := 'ClampStation.CylB', Actual := _d.SourcePath,
+                    Message := 'rollup names CylB, not the EM (H.5)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

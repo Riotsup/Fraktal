@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_Category" Id="{539777a9-74d0-46c1-8a9b-fc082b7d23c4}">
+    <Declaration><![CDATA[// Core §8.8 (ST_Diagnostic.Category)
+{attribute 'qualified_only'}
+TYPE E_Category : (PROCESS := 0, SAFETY := 1, SYSTEM := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

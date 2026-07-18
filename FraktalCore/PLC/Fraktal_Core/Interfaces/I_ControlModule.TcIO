@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_ControlModule" Id="{1944b7ae-7f75-45d0-adb9-181c389f8c43}">
+    <Declaration><![CDATA[// Core §3.2 — HAL-bound leaf tier. Same generic command vocabulary as I_EquipmentModule.
+INTERFACE I_ControlModule EXTENDS I_Module]]></Declaration>
+    <Method Name="ExecuteCommand" Id="{4eda4239-3160-4b3f-8130-a321f054962a}">
+      <Declaration><![CDATA[METHOD ExecuteCommand : BOOL
+VAR_INPUT
+    Command : DINT;   // value of the type's E_<Type>Command
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="AbortCommand" Id="{d9340362-f5ae-4129-b7b8-eaced7c637cd}">
+      <Declaration><![CDATA[METHOD AbortCommand : BOOL]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

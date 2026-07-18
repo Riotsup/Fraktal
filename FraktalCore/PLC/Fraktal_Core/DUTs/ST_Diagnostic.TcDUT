@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_Diagnostic" Id="{6f654f1c-e683-42b0-8cc1-77001e85f072}">
+    <Declaration><![CDATA[// Core §8.8 — the full first-out reason record
+TYPE ST_Diagnostic :
+STRUCT
+    ReasonCode  : E_Reason;      // named reason; ErrorID = TO_DWORD(ReasonCode)
+    SourcePath  : STRING(255);   // OPC UA browse path of the module/condition (Core §4.8)
+    Description : STRING(255);   // localization key (from PermIntlk or module); never operator prose
+    IoTag       : STRING(80);    // untranslated schematic/electrical tag of implicated channel
+    IoAddress   : STRING(80);    // terminal/channel locator, e.g. EL1809 Ch5
+    Severity    : E_Severity;    // LOW | MED | HIGH (Core §8.1)
+    Category    : E_Category;    // PROCESS | SAFETY | SYSTEM
+    Since       : DT;            // first-out timestamp (synchronized clock, Core §2.7)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

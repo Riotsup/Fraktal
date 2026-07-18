@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="PL_TcpDevReasons" Id="{79f1278c-42cc-4cfb-80af-fc01830b8374}">
+    <Declaration><![CDATA[// Core §3.15.1a / §8.8 — TCP/ASCII device CM base band 10401-10406 (registered).
+// Device profiles extend within 10401-10499.
+{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+    DEV_CHANNEL_FAULT : DINT := 10401;   // transport reported FAULT
+    DEV_RESP_TIMEOUT  : DINT := 10402;   // no terminated response within RespTimeout
+    DEV_PROTOCOL      : DINT := 10403;   // profile parse rejected the response
+    DEV_NOT_CONNECTED : DINT := 10404;   // request issued while channel not OPEN
+    DEV_CFG_INVALID   : DINT := 10405;   // missing host/port/channel at Setup
+    DEV_RX_OVERFLOW   : DINT := 10406;   // response exceeded the RX buffer
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

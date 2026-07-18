@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Base_Tests" Id="{531acd32-9163-4729-85e1-c980329a9c08}" SpecialFunc="None">
+    <Declaration><![CDATA[// Base-class TcUnit suite — conformance rows T1/T2/T4 proven ONCE for every
+// inheriting type (Core §5.7), plus the EM rollup (T6 at base level).
+FUNCTION_BLOCK FB_Base_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _p1 : FB_ProbeCM;   // T1
+    _p2 : FB_ProbeCM;   // T2
+    _p4 : FB_ProbeCM;   // T4
+    _em : FB_ProbeEM;   // T6 (base-level rollup)
+    _d  : ST_Diagnostic;
+    _w1, _w2, _w4, _w6 : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[T1_Handshake_and_execute_drop_reset();
+T2_First_out_reason_and_source_path();
+T4_Abort_reports_and_no_auto_resume();
+T6_Rollup_adopts_child_first_out();]]></ST>
+    </Implementation>
+    <Method Name="T1_Handshake_and_execute_drop_reset" Id="{f730516d-0084-45b4-af32-8548c10d1753}">
+      <Declaration><![CDATA[METHOD T1_Handshake_and_execute_drop_reset]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T1_Handshake_and_execute_drop_reset');
+IF NOT _w1 THEN
+    _p1.Setup('Test.Probe1');
+    _w1 := TRUE;
+END_IF
+_p1.Execute := TRUE;
+_p1();
+AssertTrue(Condition := _p1.Busy, Message := 'Busy on Execute rising edge');
+_p1.SimDone := TRUE;
+_p1();
+AssertTrue(Condition := _p1.Done,  Message := 'Done on completion');
+AssertFalse(Condition := _p1.Busy, Message := 'not Busy when Done');
+_p1.Execute := FALSE;
+_p1.SimDone := FALSE;
+_p1();
+AssertFalse(Condition := _p1.Busy OR _p1.Done OR _p1.Error OR _p1.Aborted,
+            Message := 'idle after Execute drops (Core 6.1 reset)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="T2_First_out_reason_and_source_path" Id="{cb9a77d1-5944-40e1-8161-fd59e78f0bfa}">
+      <Declaration><![CDATA[METHOD T2_First_out_reason_and_source_path]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T2_First_out_reason_and_source_path');
+IF NOT _w2 THEN
+    _p2.Setup('Test.Probe2');
+    _w2 := TRUE;
+END_IF
+_p2.Execute  := TRUE;
+_p2.SimFault := TRUE;
+_p2();
+AssertTrue(Condition := _p2.Error, Message := 'Error on forced fault');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.TEST_FAULT),
+                   Actual   := _p2.ErrorID,
+                   Message  := 'ErrorID carries the first-out ReasonCode (Core 8.8)');
+_d := _p2.GetFaultSummary();
+AssertEquals_STRING(Expected := 'Test.Probe2',
+                    Actual   := _d.SourcePath,
+                    Message  := 'first-out names the source path (Core 6.9)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="T4_Abort_reports_and_no_auto_resume" Id="{87ad7b91-78e8-4d0f-b2f1-b7d428cb2e68}">
+      <Declaration><![CDATA[METHOD T4_Abort_reports_and_no_auto_resume]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T4_Abort_reports_and_no_auto_resume');
+IF NOT _w4 THEN
+    _p4.Setup('Test.Probe4');
+    _w4 := TRUE;
+END_IF
+_p4.Execute := TRUE;
+_p4();
+AssertTrue(Condition := _p4.Busy, Message := 'Busy before abort');
+_p4.Abort := TRUE;
+_p4();
+AssertTrue(Condition := _p4.Aborted, Message := 'Aborted reported');
+_p4.Abort := FALSE;
+_p4();
+AssertFalse(Condition := _p4.Busy,
+            Message := 'no self-resume while Execute stays held (Core 6.1/9.3)');
+_p4.Execute := FALSE;
+_p4();
+AssertFalse(Condition := _p4.Aborted, Message := 'idle after Execute drops');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="T6_Rollup_adopts_child_first_out" Id="{f439e5fa-5810-48ee-a073-4ef306c3f2b2}">
+      <Declaration><![CDATA[METHOD T6_Rollup_adopts_child_first_out]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T6_Rollup_adopts_child_first_out');
+IF NOT _w6 THEN
+    _em.Setup('Test.EM');
+    _w6 := TRUE;
+END_IF
+_em.TestSetChildren(ChildADone := TRUE, ChildAFault := FALSE,
+                    ChildBDone := FALSE, ChildBFault := TRUE);
+_em.Execute := TRUE;
+_em();                          // scan 1: EM Busy, commands children
+_em();                          // scan 2: children ran, EM joins/rolls up
+_em();                          // scan 3: settle
+AssertTrue(Condition := _em.Error, Message := 'EM faults on child error');
+_d := _em.GetFaultSummary();
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.TEST_FAULT),
+                   Actual   := TO_DWORD(_d.ReasonCode),
+                   Message  := 'EM adopts the child reason verbatim (Core 8.2)');
+AssertEquals_STRING(Expected := 'Test.EM.ChildB',
+                    Actual   := _d.SourcePath,
+                    Message  := 'rollup names the CHILD source path, not the EM');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

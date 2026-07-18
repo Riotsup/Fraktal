@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ModuleStatus" Id="{7e19f821-64f8-4d02-b98c-ab6007955783}">
+    <Declaration><![CDATA[// Core §3.10(a')/§3.12/§6.9(a) — the DATA MIRROR every module publishes each scan.
+// Properties/methods serve PLC code; this struct serves OPC UA/HMI. It is the
+// framework baseline of the OutImm role: name, tier, state summary, and the live
+// first-out diagnostic — everything a generic tile needs, browsable by type.
+TYPE ST_ModuleStatus :
+STRUCT
+    Name        : STRING(80);     // = browse name (§4.8) — the tile caption
+    DisplayNameKey : STRING(160); // optional localization key; Name remains identity
+    DescriptionKey : STRING(160); // optional module information localization key
+    ModuleType  : E_ModuleType;   // UNIT | EQUIPMENT_MODULE | CONTROL_MODULE (tile kind)
+    State       : E_ExecState;    // the tile state LED
+    FaultActive : BOOL;
+    Diagnostic  : ST_Diagnostic;  // live first-out (§6.9(a)) — the tile message line
+    TileEnable  : BOOL := TRUE;   // §3.13: render as a tile on the parent's child view
+    ControlDomainId : STRING(80); // §9.8: '' = no safety/control-power arrangement
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

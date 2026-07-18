@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_RecipeProvider" Id="{343b29b6-6c9b-4dff-8483-d670a32a9c57}">
+    <Declaration><![CDATA[// Core §3.8 — pluggable recipe/type-data source. Implementations MUST validate
+// completeness and SchemaVersion before filling ParCfg (migrate-or-fault; never partial).
+INTERFACE I_RecipeProvider]]></Declaration>
+    <Method Name="Load" Id="{8fa7419b-404e-4f51-91cd-f16b536e2f37}">
+      <Declaration><![CDATA[// fills the caller's ParCfg; FALSE => caller faults with RECIPE_INVALID (Core §3.8)
+METHOD Load : BOOL
+VAR_INPUT
+    ModelCode : STRING;
+    RecipeKey : STRING;
+    pParCfg : PVOID;
+    Size    : UDINT;
+END_VAR]]></Declaration>
+    </Method>
+    <Property Name="Ready" Id="{c13e20aa-a9c9-4995-b55d-9b38b7fcf8a4}">
+      <Declaration><![CDATA[PROPERTY Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{cc8a3b6e-ee14-48d3-b6d3-fb4a486f99d6}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="Source" Id="{16a9a0c3-2e45-4dfa-88da-b93bb02f85c7}">
+      <Declaration><![CDATA[PROPERTY Source : E_RecipeSource]]></Declaration>
+      <Get Name="Get" Id="{25ff2277-ee7f-412c-8af1-f4670e65513a}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_MeasRecord" Id="{dfa21d36-dd63-4ab3-8694-23f4062cf68a}">
+    <Declaration><![CDATA[// Core §3.16.1 — one measured value with limits and a FIXED engineering unit (Core §3.8)
+TYPE ST_MeasRecord :
+STRUCT
+    Name   : STRING(64);
+    Value  : LREAL;
+    Minimum : LREAL;
+    Maximum : LREAL;
+    Target : LREAL;
+    Unit   : STRING(16);   // fixed engineering unit — not runtime-variable (Core §3.8)
+    InTol  : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

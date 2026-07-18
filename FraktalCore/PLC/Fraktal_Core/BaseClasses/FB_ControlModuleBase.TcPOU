@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ControlModuleBase" Id="{ae4e5e51-ff74-4c9a-a134-86a26ef63b3a}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §2.2 — leaf-tier semantic base. The shared PLCopen lifecycle lives in
+// FB_ModuleBase; this type supplies only the Control Module tier identity.
+FUNCTION_BLOCK ABSTRACT FB_ControlModuleBase EXTENDS FB_ModuleBase IMPLEMENTS I_ControlModule]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Property Name="ModuleType" Id="{d402ea33-626c-4396-aa2c-b3b612362126}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{92cd5723-e2a9-4553-b52f-af42b6e2e966}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModuleType := E_ModuleType.CONTROL_MODULE;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+  </POU>
+</TcPlcObject>

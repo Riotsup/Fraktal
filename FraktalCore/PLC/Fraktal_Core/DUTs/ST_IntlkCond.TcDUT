@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_IntlkCond" Id="{2ac295af-9628-44b7-95ec-80463d28227f}">
+    <Declaration><![CDATA[// Core §7.2 — per-condition record of FB_PermIntlk
+TYPE ST_IntlkCond :
+STRUCT
+    Defined     : BOOL;
+    Description : STRING(255);   // localization key
+    Reason      : E_Reason;
+    Bypassable  : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

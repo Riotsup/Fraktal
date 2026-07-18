@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_HmiRequest" Id="{05e3b127-b092-4ac0-b673-b38164ec97fa}">
+    <Declaration><![CDATA[// Core §3.10/§14 — write-only-by-convention generic Unit request mailbox.
+// The client writes all arguments first and Sequence LAST as the atomic commit marker.
+TYPE ST_HmiRequest :
+STRUCT
+    Kind       : E_HmiRequestKind;
+    TargetPath : STRING(255);
+    NameValue  : STRING(160);
+    TextValue  : STRING(255);
+    User       : STRING(32);
+    Secret     : STRING(32);   // base clears immediately after sampling
+    IntValue   : DINT;
+    BoolValue  : BOOL;
+    DurationMs : UDINT;
+    Sequence   : UDINT;        // monotonically changing commit marker
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_CylinderPosition" Id="{8e5c22d5-7cc2-4807-b05c-9f25d2ecd8ca}">
+    <Declaration><![CDATA[// Basic cylinder position (Home = retracted rest, Work = extended active).
+{attribute 'qualified_only'}
+TYPE E_CylinderPosition : (UNKNOWN := 0, HOME := 1, WORK := 2, MID := 3) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

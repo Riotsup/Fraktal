@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ProbeCM" Id="{ace2ffef-da6f-4500-bb16-d6b5e668246d}" SpecialFunc="None">
+    <Declaration><![CDATA[// Minimal concrete probe for the base classes (Fraktal_QuickStart_and_Suite.md §1).
+// Its ONLY logic is _M_Dispatch — everything else is inherited, which is the point.
+FUNCTION_BLOCK FB_ProbeCM EXTENDS FB_ControlModuleBase
+VAR_INPUT
+    SimDone  : BOOL;
+    SimFault : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{fa777fc7-9e8d-4c24-aab9-7b0fc5bce9d1}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{09dda4aa-ea32-4a00-b61d-5b786f9f2569}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_TagCommand(Id := 1, Label := 'PROBE');   // §8.11.4(a) — the one-line command tag
+IF SimFault THEN
+    _M_Fault(E_Reason.TEST_FAULT, 'probe fault');
+ELSIF SimDone THEN
+    _M_Complete();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_AccessLevel" Id="{ccb75ff5-9eca-4d9d-bbd4-653e96235a8c}">
+    <Declaration><![CDATA[// Core §7.7(a) — ordinal levels; a gated action requires CurrentLevel >= threshold
+{attribute 'qualified_only'}
+TYPE E_AccessLevel : (NONE := 0, OPERATOR := 1, TECHNICIAN := 2, ENGINEER := 3, ADMIN := 4) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_CompositeModuleBase" Id="{63098d21-8fd7-4883-9a89-b8cb22e5ae0c}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §2.2 / §8.2 — CM lifecycle + child registry + first-out rollup.
+// An EM type registers its children in Setup (_M_Register), ticks them every scan
+// (_M_TickChildren, so status stays live whether or not a command runs — Annex B),
+// and adopts the first faulted child's diagnostic verbatim (_M_RollupFault).
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK ABSTRACT FB_CompositeModuleBase EXTENDS FB_ModuleBase
+VAR
+    _children : ARRAY[1..PL_Fraktal.MAX_EM_CHILDREN] OF I_Module;
+    _nChild   : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="_M_Register" Id="{f4ee4a09-9702-4f84-aaec-2532ff317d62}">
+      <Declaration><![CDATA[// called from the type's Setup (Core §3.11); bounds-checked per Core §5.6
+METHOD PROTECTED _M_Register : BOOL
+VAR_INPUT
+    Child : I_Module;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (Child = 0) OR (_nChild >= PL_Fraktal.MAX_EM_CHILDREN) THEN
+    _M_Register := FALSE;
+    RETURN;
+END_IF
+_nChild := _nChild + 1;
+_children[_nChild] := Child;
+_M_Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{b24475ae-9df9-45e0-bb10-84e166982c23}">
+      <Declaration><![CDATA[METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR
+VAR
+    i, j : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[PrepareRecipe := TRUE;
+FOR i := 1 TO _nChild DO
+    IF (_children[i] <> 0) AND_THEN NOT _children[i].PrepareRecipe(Model := Model) THEN
+        PrepareRecipe := FALSE;
+        FOR j := 1 TO i DO
+            IF _children[j] <> 0 THEN _children[j].AbortRecipe(); END_IF
+        END_FOR
+        RETURN;
+    END_IF
+END_FOR]]></ST></Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{026d831c-c810-4d30-b879-6b6636faeb5d}">
+      <Declaration><![CDATA[METHOD CommitRecipe
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[FOR i := 1 TO _nChild DO
+    IF _children[i] <> 0 THEN _children[i].CommitRecipe(); END_IF
+END_FOR]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{80b7b053-1b4b-41c5-a245-9f018f707104}">
+      <Declaration><![CDATA[METHOD AbortRecipe
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[FOR i := 1 TO _nChild DO
+    IF _children[i] <> 0 THEN _children[i].AbortRecipe(); END_IF
+END_FOR]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_RollupFault" Id="{9ae3a09a-bf2d-4c4c-8a41-3c1afda50f85}">
+      <Declaration><![CDATA[// Core §8.2 — adopt the FIRST faulted child's first-out (reason + child SourcePath)
+METHOD PROTECTED _M_RollupFault : BOOL
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_RollupFault := FALSE;
+FOR i := 1 TO _nChild DO
+    IF _children[i] <> 0 AND_THEN _children[i].FaultActive THEN
+        _M_FaultDiag(_children[i].GetFaultSummary());
+        _M_RollupFault := TRUE;
+        RETURN;
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TickChildren" Id="{ceb9196c-607c-4188-a830-316778464529}">
+      <Declaration><![CDATA[// children always tick so their status stays live (Annex B §B.3)
+METHOD PROTECTED _M_TickChildren
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i := 1 TO _nChild DO
+    IF _children[i] <> 0 THEN
+        _children[i].Cyclic();
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="ModuleType" Id="{0d310480-7927-4488-9b81-b21d73233d7f}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{1e89d76a-b9b8-4104-bcec-5ece6d0ad554}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModuleType := E_ModuleType.NONE;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PowerGroupCM" Id="{2bf1a801-ff49-4a79-861f-523b2132109e}" SpecialFunc="None">
+    <Declaration><![CDATA[// §9.8 basic power-group CM. It requests functional enable; certified safety
+// logic and field-output watchdogs remain authoritative. Recovery never self-energizes.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_PowerGroupCM EXTENDS FB_ControlModuleBase
+VAR_INPUT
+    Command : E_PowerGroupCommand;
+    ParCfg  : ST_PowerGroupParCfg;
+    ParCmd  : ST_PowerGroupParCmd;
+END_VAR
+VAR_OUTPUT
+    OutCmd : ST_PowerGroupOutCmd;
+    OutImm : ST_PowerGroupOutImm;
+END_VAR
+VAR
+    _hal : REFERENCE TO ST_PowerGroupHal;
+    _tFeedback : TON;
+    _rearmRequired : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Cyclic();]]></ST></Implementation>
+    <Method Name="Setup" Id="{83db51e7-6a78-4ea2-a6d4-e42ab93ea69c}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    HalRef : REFERENCE TO ST_PowerGroupHal;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'std.moduleType.powerGroup.name', DescriptionKey := 'std.moduleType.powerGroup.description');
+_hal REF= HalRef;
+// Power control deliberately has no MANUAL command catalog: it uses the Unit's
+// POWER_CONTROL-gated ReqControlOn/ReqControlOff endpoint (§9.8).
+Setup := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{72185472-cf61-48c8-af9b-caa0cf6c9cf6}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT
+VAR
+    busMustDrop : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+CASE ParCfg.FieldbusLossReaction OF
+    E_FieldbusLossReaction.ALARM_ONLY, E_FieldbusLossReaction.STOP_UNIT:
+        busMustDrop := FALSE;
+    E_FieldbusLossReaction.POWER_GROUP_OFF, E_FieldbusLossReaction.CONTROL_OFF:
+        busMustDrop := TRUE;
+ELSE
+    busMustDrop := TRUE; // unknown policy fails toward power removal
+END_CASE
+IF (NOT _hal.SafetyPermit) OR (busMustDrop AND NOT _hal.FieldbusHealthy) THEN
+    IF _hal.EnableRequestOut OR _hal.PowerFeedback THEN _rearmRequired := TRUE; END_IF
+    _hal.EnableRequestOut := FALSE;
+END_IF
+OutCmd.PowerOn := _hal.PowerFeedback;
+OutImm.Status.Present := TRUE;
+OutImm.Status.Name := _name;
+OutImm.Status.Kind := ParCfg.Kind;
+OutImm.Status.RequiredForControl := ParCfg.RequiredForControl;
+OutImm.Status.RequestedOn := _hal.EnableRequestOut;
+OutImm.Status.PowerOn := _hal.PowerFeedback;
+OutImm.Status.SafetyPermit := _hal.SafetyPermit;
+OutImm.Status.FieldbusHealthy := _hal.FieldbusHealthy;
+OutImm.Status.FieldbusLossReaction := ParCfg.FieldbusLossReaction;
+OutImm.Status.RearmRequired := _rearmRequired;
+IF _hal.PowerFeedback THEN
+    OutImm.Status.State := E_PowerState.ON;
+ELSIF _rearmRequired THEN
+    OutImm.Status.State := E_PowerState.TRIPPED;
+ELSE
+    OutImm.Status.State := E_PowerState.OFF;
+END_IF
+OutImm.Status.Diagnostic := Status.Diagnostic;
+OutImm.Diagnostic := Status.Diagnostic;
+ControlPower.Present := TRUE;
+ControlPower.GroupCount := 1;
+ControlPower.Groups[1] := OutImm.Status;
+ControlPower.RequestedOn := _hal.EnableRequestOut;
+ControlPower.ControlOn := _hal.PowerFeedback;
+ControlPower.RearmRequired := _rearmRequired;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{9045319c-ea3d-4926-9923-c4957212d2fb}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation><ST><![CDATA[IF _manualReq THEN
+    Command := _manualCmd;
+    _manualReq := FALSE;
+END_IF
+CASE _step OF
+    10:
+        CASE Command OF
+            E_PowerGroupCommand.POWER_ON:
+                IF (NOT _hal.SafetyPermit) OR (NOT _hal.FieldbusHealthy) THEN
+                    _M_FaultN(Code := PL_ModuleReasons.POWER_ENABLE_WITHHELD, Text := 'std.error.powerEnableWithheld');
+                ELSE
+                    _rearmRequired := FALSE;
+                    _hal.EnableRequestOut := TRUE;
+                    _step := 20;
+                END_IF
+            E_PowerGroupCommand.POWER_OFF:
+                _hal.EnableRequestOut := FALSE;
+                _step := 30;
+        ELSE
+            _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedPowerCommand');
+        END_CASE
+    20:
+        _tFeedback(IN := NOT _hal.PowerFeedback, PT := ParCfg.FeedbackTimeout);
+        IF _hal.PowerFeedback THEN _tFeedback(IN := FALSE); _M_Complete();
+        ELSIF _tFeedback.Q THEN _M_FaultN(Code := PL_ModuleReasons.POWER_FEEDBACK_TIMEOUT, Text := 'std.error.powerOnFeedbackTimeout'); END_IF
+    30:
+        _tFeedback(IN := _hal.PowerFeedback, PT := ParCfg.FeedbackTimeout);
+        IF NOT _hal.PowerFeedback THEN _tFeedback(IN := FALSE); _M_Complete();
+        ELSIF _tFeedback.Q THEN _M_FaultN(Code := PL_ModuleReasons.POWER_FEEDBACK_TIMEOUT, Text := 'std.error.powerOffFeedbackTimeout'); END_IF
+ELSE
+    _hal.EnableRequestOut := FALSE;
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedPowerStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+    <Method Name="OnAbort" Id="{08129f50-1fbb-4ec1-8de9-39f960d1a157}">
+      <Declaration><![CDATA[METHOD PROTECTED OnAbort : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnAbort := SUPER^.OnAbort();
+_hal.EnableRequestOut := FALSE;
+_rearmRequired := TRUE;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_DecisionRequest" Id="{99105a78-6cad-4a0a-91e2-656a1da2cb5e}">
+    <Declaration><![CDATA[// Core §6.11 — typed operator decision request
+TYPE ST_DecisionRequest :
+STRUCT
+    Prompt     : STRING(255);   // localization key; Options[] are keys too
+    Options    : ARRAY[1..PL_Fraktal.MAX_OPTIONS] OF STRING(64);
+    Default    : INT;            // option index applied on timeout
+    Timeout    : TIME;           // T#0S = wait indefinitely
+    SourcePath : STRING(255);    // raising module (Core §4.8)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

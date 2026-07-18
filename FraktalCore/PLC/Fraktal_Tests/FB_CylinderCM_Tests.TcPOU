@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_CylinderCM_Tests" Id="{189bea71-15a6-4afc-b887-7c3ef76c0f5f}" SpecialFunc="None">
+    <Declaration><![CDATA[// Annex H suite for the cylinder TYPE: T2/T3/T5 with ITS reasons + functional
+// completion against the sim plant model (T1/T4 inherited — not repeated, §5.7).
+FUNCTION_BLOCK FB_CylinderCM_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _cm1, _cm2, _cm3, _cm4, _cm5, _cm6 : FB_CylinderCM;
+    _h1, _h2, _h3, _h4, _h5, _h6 : ST_CylinderHal;
+    _sim1 : FB_CylinderSim;
+    _prOk, _prFast, _prBad : FB_LocalRecipeProvider;
+    _bOk, _bFast, _bBad : ST_CylinderParCfg;
+    _prModels : FB_LocalRecipeProvider;
+    _modelA, _modelB, _loaded : ST_CylinderParCfg;
+    _d : ST_Diagnostic;
+    _release : ST_ReleaseReport;
+    _io6 : ST_CylinderIoIdentity;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _bFast.MoveTimeout := T#0S;              // deterministic timeout in one scan
+    _bBad.SchemaVersion := 2;                // stored schema != expected (=1)
+    _prOk.Register(ModelCode := '', RecipeKey := 'CylinderCM', pData := ADR(_bOk), Size := SIZEOF(_bOk));
+    _prFast.Register(ModelCode := '', RecipeKey := 'CylinderCM', pData := ADR(_bFast), Size := SIZEOF(_bFast));
+    _prBad.Register(ModelCode := '', RecipeKey := 'CylinderCM', pData := ADR(_bBad), Size := SIZEOF(_bBad));
+    _modelA.MoveTimeout := T#1S;
+    _modelB.MoveTimeout := T#2S;
+    _prModels.Register(ModelCode := 'A', RecipeKey := 'CylinderCM', pData := ADR(_modelA), Size := SIZEOF(_modelA));
+    _prModels.Register(ModelCode := 'B', RecipeKey := 'CylinderCM', pData := ADR(_modelB), Size := SIZEOF(_modelB));
+    _cm1.Setup(Name := 'Test.Cyl1', HalRef := _h1, Recipe := _prOk);
+    _sim1.Setup(HalRef := _h1, TravelTime := T#0S);
+    _cm2.Setup(Name := 'Test.Cyl2', HalRef := _h2, Recipe := _prFast);
+    _cm3.Setup(Name := 'Test.Cyl3', HalRef := _h3, Recipe := _prOk);
+    _cm5.Setup(Name := 'Test.Cyl5', HalRef := _h5, Recipe := _prOk);
+    _cm6.Setup(Name := 'Test.Cyl6', HalRef := _h6, Recipe := _prFast);
+    _io6.ExtendedSensor.Tag := '_101B202A';
+    _io6.ExtendedSensor.Address := 'EL1809 Ch5';
+    _io6.RetractedSensor.Tag := '_101B202B';
+    _io6.RetractedSensor.Address := 'EL1809 Ch6';
+    _io6.ExtendOutput.Tag := '_101K202A';
+    _io6.RetractOutput.Tag := '_101K202B';
+    _io6.ExtendedTimeoutKey := 'project.error.pressDownSensorTimeout';
+    _io6.RetractedTimeoutKey := 'project.error.pressUpSensorTimeout';
+    _io6.BothSensorsKey := 'project.error.pressPositionSensorsConflict';
+    _cm6.ConfigureIoIdentity(Identity := _io6);
+    _w := TRUE;
+END_IF
+Extend_completes_against_sim();
+T2_first_out_reason_and_path();
+T3_interlock_withholds_output();
+T5_recipe_schema_mismatch_faults();
+Recipe_lookup_uses_model_and_key();
+Directional_interlock_covers_typed_command();
+Timeout_identifies_sensor_tag();]]></ST>
+    </Implementation>
+    <Method Name="Extend_completes_against_sim" Id="{3ef42ed9-e916-4872-9b7b-3c0317591c20}">
+      <Declaration><![CDATA[METHOD Extend_completes_against_sim]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Extend_completes_against_sim');
+_cm1.Command := E_CylinderCommand.EXTEND;
+_cm1.Execute := TRUE;
+_cm1();                                      // edge -> step 10 drives ExtendOut
+_cm1();                                      // step 20 awaiting fb
+_sim1();                                     // plant: sensor made (travel T#0S)
+_cm1();                                      // sees fb -> Done
+AssertTrue(Condition := _cm1.Done, Message := 'handshake completes on feedback (6.1)');
+AssertTrue(Condition := _cm1.Timing.Rows[1].Count = 1,
+           Message := 'command timing row captured (8.11.4a)');
+_cm1.Execute := FALSE;
+_cm1();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Directional_interlock_covers_typed_command" Id="{b1f357ee-4724-4853-bb61-82886d9d3106}">
+      <Declaration><![CDATA[METHOD Directional_interlock_covers_typed_command]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Directional_interlock_covers_typed_command');
+_cm5.SetDirectionalPermits(ExtendOk := FALSE, RetractOk := TRUE,
+    ExtendDescriptionKey := 'project.interlock.testExtendBlocked',
+    RetractDescriptionKey := 'project.interlock.testRetractAllowed');
+_cm5.AppendDirectionalRelease(Value := TO_DINT(E_CylinderCommand.EXTEND), Report := _release);
+AssertTrue(Condition := _release.Count = 1,
+    Message := 'manual release query reports the selected blocked direction');
+AssertEquals_STRING(Expected := 'project.interlock.testExtendBlocked',
+    Actual := _release.Reasons[1].Description, Message := 'release query and dispatch share one key');
+AssertEquals_STRING(Expected := 'Test.Cyl5', Actual := _release.Reasons[1].SourcePath,
+    Message := 'directional release preserves the child module path');
+_cm5.Command := E_CylinderCommand.EXTEND;
+_cm5.Execute := TRUE;
+_cm5();
+AssertFalse(Condition := _h5.ExtendOut,
+    Message := 'direction-specific collision interlock withholds output');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.INTERLOCK_DROPPED),
+    Actual := _cm5.ErrorID, Message := 'direction interlock uses common reason');
+_d := _cm5.GetFaultSummary();
+AssertEquals_STRING(Expected := 'project.interlock.testExtendBlocked',
+    Actual := _d.Description, Message := 'selected direction publishes its key');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="T2_first_out_reason_and_path" Id="{1f856640-0af5-4829-aa11-e2bf4cb1faf5}">
+      <Declaration><![CDATA[METHOD T2_first_out_reason_and_path]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T2_first_out_reason_and_path');
+_cm2.Command := E_CylinderCommand.EXTEND;
+_cm2.Execute := TRUE;
+_cm2();                                      // step 10
+_cm2();                                      // step 20: MoveTimeout T#0S -> fault
+AssertTrue(Condition := _cm2.Error, Message := 'Error after MoveTimeout');
+AssertEquals_DWORD(Expected := TO_DWORD(PL_ModuleReasons.CYL_NOT_EXTENDED),
+                   Actual   := _cm2.ErrorID,
+                   Message  := 'first-out is the type band code 10101 (8.8)');
+_d := _cm2.GetFaultSummary();
+AssertEquals_STRING(Expected := 'Test.Cyl2', Actual := _d.SourcePath,
+                    Message := 'reason names the source path (6.9)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="T3_interlock_withholds_output" Id="{f6e1b100-2935-404a-9cfa-acff6b9cc796}">
+      <Declaration><![CDATA[METHOD T3_interlock_withholds_output]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T3_interlock_withholds_output');
+_cm3.SimForceInterlock(Id := 1, Ok := FALSE);   // SIM-only hook (5.7)
+_cm3.Command := E_CylinderCommand.EXTEND;
+_cm3.Execute := TRUE;
+_cm3();
+AssertFalse(Condition := _h3.ExtendOut,
+            Message := 'output must not energize while interlocked (7)');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.INTERLOCK_DROPPED),
+                   Actual   := _cm3.ErrorID,
+                   Message  := 'interlock reason expected (7.2)');
+_d := _cm3.GetFaultSummary();
+AssertEquals_STRING(Expected := 'Test.Cyl3', Actual := _d.SourcePath,
+                    Message := 'owner sets the source path (7.2)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="T5_recipe_schema_mismatch_faults" Id="{acec950e-9a90-4bd3-b317-038ef6378cab}">
+      <Declaration><![CDATA[METHOD T5_recipe_schema_mismatch_faults]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('T5_recipe_schema_mismatch_faults');
+_cm4.Setup(Name := 'Test.Cyl4', HalRef := _h4, Recipe := _prBad);   // stored v2 vs expected v1
+_cm4();                                      // map ErrorID
+AssertTrue(Condition := _cm4.FaultActive, Message := 'migrate-or-fault (3.8)');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.RECIPE_INVALID),
+                   Actual   := _cm4.ErrorID,
+                   Message  := 'RECIPE_INVALID on SchemaVersion mismatch (3.8)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Recipe_lookup_uses_model_and_key" Id="{0c3eb92e-2d06-4db3-b82e-2b1961d7b782}">
+      <Declaration><![CDATA[METHOD Recipe_lookup_uses_model_and_key]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Recipe_lookup_uses_model_and_key');
+AssertTrue(Condition := _prModels.Load(ModelCode := 'B', RecipeKey := 'CylinderCM',
+    pParCfg := ADR(_loaded), Size := SIZEOF(_loaded)),
+    Message := 'model-specific record found');
+AssertTrue(Condition := _loaded.MoveTimeout = T#2S,
+    Message := 'same recipe key resolves by ModelCode');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Timeout_identifies_sensor_tag" Id="{7f9aa962-d76c-47a7-9e3e-0a37c27b16e8}">
+      <Declaration><![CDATA[METHOD Timeout_identifies_sensor_tag]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Timeout_identifies_sensor_tag');
+_cm6.Command := E_CylinderCommand.EXTEND;
+_cm6.Execute := TRUE;
+_cm6();
+_cm6();
+_d := _cm6.GetFaultSummary();
+AssertEquals_STRING(Expected := '_101B202A', Actual := _d.IoTag,
+    Message := 'timeout carries exact schematic sensor tag');
+AssertEquals_STRING(Expected := 'EL1809 Ch5', Actual := _d.IoAddress,
+    Message := 'timeout carries terminal channel locator');
+AssertEquals_STRING(Expected := 'project.error.pressDownSensorTimeout',
+    Actual := _d.Description, Message := 'timeout uses project-localizable sensor message');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

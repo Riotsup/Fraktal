@@ -1,0 +1,12 @@
+# Analyzer config. No `include: package:flutter_lints/...` — this project has a
+# deliberate ZERO third-party package policy (see pubspec.yaml), so the config
+# is self-contained. Core recommended rules are enabled inline instead.
+linter:
+  rules:
+    - avoid_print
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_fields
+    - unnecessary_this
+    - use_key_in_widget_constructors
+    - deprecated_member_use_from_same_package

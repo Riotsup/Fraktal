@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_Oee" Id="{3cb3c575-4082-4d2c-9f34-a81958392855}">
+    <Declaration><![CDATA[// Core §8.5.1 — OEE snapshot + accumulators (published; derived, never lies).
+// Factors are 0..1 REAL; a factor with Valid=FALSE is omitted from Oee, not 100%.
+TYPE ST_Oee :
+STRUCT
+    RunMs        : UDINT;   // time buckets since reset (ms; wraps ~49 days)
+    DownMs       : UDINT;
+    IdleMs       : UDINT;
+    Availability : REAL;    AvailValid : BOOL;
+    Performance  : REAL;    PerfValid  : BOOL;   // needs IdealCycleMs > 0
+    Quality      : REAL;    QualValid  : BOOL;
+    Oee          : REAL;    OeeValid   : BOOL;   // product of the VALID factors only
+    IdealCycleMs : UDINT;   // §3.8 per-model config; 0 = performance not computed
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

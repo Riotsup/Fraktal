@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_HmiResponse" Id="{8a44ddcf-f4af-4baa-a702-594e81939b1e}">
+    <Declaration><![CDATA[// Core §3.10/§14 — acknowledgement for ST_HmiRequest.
+TYPE ST_HmiResponse :
+STRUCT
+    AckSequence : UDINT;
+    Accepted    : BOOL;           // request acted or query completed
+    Diagnostic  : STRING(255);    // localization key when refused/unsupported
+    Report      : ST_ReleaseReport;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

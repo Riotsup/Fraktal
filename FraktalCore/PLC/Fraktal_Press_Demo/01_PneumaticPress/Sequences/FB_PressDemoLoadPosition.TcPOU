@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressDemoLoadPosition" Id="{27be7602-c702-dcca-822f-fb9fc2c71001}" SpecialFunc="None">
+    <Declaration><![CDATA[// Shared load-safe-position sub-sequence (Core §6.7): ram up, door open, slide
+// outside. HOME and CHANGEOVER both embed it as one composite step, passing a
+// BaseStepNo window so its detailed progress projects through the Unit's normal
+// §6.5 step record. Implemented as a Core §6.8 ST `CASE _step OF` skeleton on
+// FB_SequenceBase — the step actions issue child commands only through the §6.1
+// handshake (M_MayIssue), and progression rides the shared _retVal via M_Advance.
+FUNCTION_BLOCK FB_PressDemoLoadPosition EXTENDS FB_SequenceBase
+VAR
+    _baseStepNo : INT;
+    {attribute 'OPC.UA.DA' := '0'}
+    _pressRam : REFERENCE TO FB_CylinderCM;
+    {attribute 'OPC.UA.DA' := '0'}
+    _door : REFERENCE TO FB_CylinderCM;
+    {attribute 'OPC.UA.DA' := '0'}
+    _partSlide : REFERENCE TO FB_CylinderCM;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[// step body runs via M_Run; the Unit calls this instance each scan
+]]></ST></Implementation>
+    <Method Name="Setup" Id="{27be7602-c702-dcca-822f-fb9fc2c71002}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Host : I_SequenceHost;
+END_VAR
+VAR_IN_OUT
+    PressRam : FB_CylinderCM;
+    Door : FB_CylinderCM;
+    PartSlide : FB_CylinderCM;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_pressRam REF= PressRam;
+_door REF= Door;
+_partSlide REF= PartSlide;
+Setup := M_Attach(Host := Host)
+    AND __ISVALIDREF(_pressRam) AND __ISVALIDREF(_door) AND __ISVALIDREF(_partSlide);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Reset" Id="{27be7602-c702-dcca-822f-fb9fc2c71003}">
+      <Declaration><![CDATA[METHOD M_Reset
+VAR_INPUT
+    BaseStepNo : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_baseStepNo := BaseStepNo;
+M_ResetBase(FirstStep := 0);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Run" Id="{27be7602-c702-dcca-822f-fb9fc2c71004}">
+      <Declaration><![CDATA[// §6.8 ST step skeleton. One M_Step per step, one commit via M_Advance.
+METHOD M_Run]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT _attached THEN
+    RETURN;
+END_IF
+CASE _step OF
+    0:  // ram up
+        M_Step(StepNo := _baseStepNo, StepName := 'project.step.pressSafePositionRamUp',
+            Awaits := _pressRam, AwaitingLabel := 'PressRam.RETRACT',
+            Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        IF M_MayIssue(Steppable := TRUE) THEN
+            _pressRam.Abort := FALSE;
+            _pressRam.Command := E_CylinderCommand.RETRACT;
+            _pressRam.Execute := TRUE;
+        END_IF
+        IF _pressRam.Done THEN
+            _pressRam.Execute := FALSE;
+            _retVal := E_StepResult.ADVANCE;
+        END_IF
+        M_Advance(OnAdvance := 20);
+    20:  // door open
+        M_Step(StepNo := _baseStepNo + 20, StepName := 'project.step.pressSafePositionDoorOpen',
+            Awaits := _door, AwaitingLabel := 'Door.RETRACT',
+            Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        IF M_MayIssue(Steppable := TRUE) THEN
+            _door.Abort := FALSE;
+            _door.Command := E_CylinderCommand.RETRACT;
+            _door.Execute := TRUE;
+        END_IF
+        IF _door.Done THEN
+            _door.Execute := FALSE;
+            _retVal := E_StepResult.ADVANCE;
+        END_IF
+        M_Advance(OnAdvance := 40);
+    40:  // slide outside
+        M_Step(StepNo := _baseStepNo + 40, StepName := 'project.step.pressSafePositionSlideOutside',
+            Awaits := _partSlide, AwaitingLabel := 'PartSlide.RETRACT',
+            Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        IF M_MayIssue(Steppable := TRUE) THEN
+            _partSlide.Abort := FALSE;
+            _partSlide.Command := E_CylinderCommand.RETRACT;
+            _partSlide.Execute := TRUE;
+        END_IF
+        IF _partSlide.Done THEN
+            _partSlide.Execute := FALSE;
+            _retVal := E_StepResult.ADVANCE;
+        END_IF
+        M_Advance(OnAdvance := 999);
+    999:  // established
+        M_Step(StepNo := _baseStepNo + 60, StepName := 'project.step.pressSafePositionComplete',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        Done := TRUE;
+ELSE
+    M_Fault(Reason := E_Reason.STEP_STALLED, DescriptionKey := 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

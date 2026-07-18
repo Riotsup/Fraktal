@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_TcpDev_Tests" Id="{41ba9ee6-dbc9-44ab-870d-f10315418fec}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.15.1a: CATEGORY CMs over the SIM channel — a generic vision CM is
+// CONFIGURED (not subclassed) for an IV3-style dialect and parses judgement +
+// payload; the reader CM parses code/NOREAD and verifies a match code; silence
+// -> timeout fault 10402. No sockets, no vendor hardware.
+FUNCTION_BLOCK FB_TcpDev_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _chan : FB_SimByteChannel;
+    _vis  : FB_TcpVisionCM;
+    _chanR: FB_SimByteChannel;
+    _rdr  : FB_TcpCodeReaderCM;
+    _chanT: FB_SimByteChannel;
+    _visT : FB_TcpVisionCM;
+    _i    : INT;
+    _w    : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _chan.Script(Expect := 'T1$R', Reply := 'OK,123$R');
+    _vis.Setup(Name := 'Test.Vision', Chan := _chan, DevHost := '10.0.0.5', DevPort := 9004);
+    _vis.ParCfg.TriggerCmd := 'T1';                     // configured, not subclassed
+    _chanR.Script(Expect := 'T$R', Reply := 'ABC-001$R');
+    _rdr.Setup(Name := 'Test.Reader', Chan := _chanR, DevHost := '10.0.0.7', DevPort := 51236);
+    _rdr.ParCmd.MatchCode := 'ABC-001';
+    _visT.Setup(Name := 'Test.VisT', Chan := _chanT, DevHost := '10.0.0.6', DevPort := 9004);
+    _visT.ParCfg.RespTimeout := T#40MS;
+    _w := TRUE;
+END_IF
+Vision_configured_parses();
+Reader_code_and_match();
+Timeout_faults_10402();]]></ST>
+    </Implementation>
+    <Method Name="Vision_configured_parses" Id="{54b312cf-0314-436e-8895-cc2abcddd750}">
+      <Declaration><![CDATA[METHOD Vision_configured_parses]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Vision_configured_parses');
+_vis();
+_vis.SendRequest(Text := _vis.ParCfg.TriggerCmd);
+_vis();
+AssertTrue(Condition := _vis.OutCmd.JudgeOk, Message := 'OK judgement parsed by the CATEGORY CM');
+AssertEquals_STRING(Expected := '123', Actual := _vis.OutCmd.ResultData, Message := 'payload after prefix+separator');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Reader_code_and_match" Id="{04743343-3568-4c3e-baaa-94644e733218}">
+      <Declaration><![CDATA[METHOD Reader_code_and_match]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Reader_code_and_match');
+_rdr();
+_rdr.SendRequest(Text := _rdr.ParCfg.TriggerCmd);
+_rdr();
+AssertEquals_STRING(Expected := 'ABC-001', Actual := _rdr.OutCmd.Code, Message := 'decoded symbol published');
+AssertFalse(Condition := _rdr.OutCmd.NoRead, Message := 'not a no-read');
+AssertTrue(Condition := _rdr.OutCmd.MatchOk, Message := 'configured match code verified');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Timeout_faults_10402" Id="{0b983559-877c-485e-814d-f8dc57a35fd3}">
+      <Declaration><![CDATA[METHOD Timeout_faults_10402]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Timeout_faults_10402');
+_visT();
+IF NOT _visT.Error AND _i = 0 THEN
+    _chanT.SwallowNext := TRUE;
+    _visT.SendRequest(Text := _visT.ParCfg.TriggerCmd);
+    _i := 1;
+END_IF
+_visT();
+IF _visT.Error THEN
+    AssertEquals_DWORD(Expected := TO_DWORD(PL_TcpDevReasons.DEV_RESP_TIMEOUT),
+                       Actual := _visT.ErrorID, Message := 'silence -> 10402');
+    TEST_FINISHED();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

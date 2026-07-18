@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ClampStationUnit" Id="{1bb315ff-70a6-4d52-be1c-07fc4b0a03b8}" SpecialFunc="None">
+    <Declaration><![CDATA[// Executable root Unit: continuous Clamp -> Unclamp cycle over one Clamp EM.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_ClampStationUnit EXTENDS FB_UnitBase
+VAR_INPUT
+    ParCfg : ST_ClampStationParCfg;
+    ParCmd : ST_ClampStationParCmd;
+END_VAR
+VAR_OUTPUT
+    Clamp  : FB_ClampEM;
+    OutCmd : ST_ClampStationOutCmd;
+    OutImm : ST_ClampStationOutImm;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Cyclic();]]></ST></Implementation>
+    <Method Name="Setup" Id="{6ce995b4-22d9-4a2b-8467-c55ad4edbb64}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    HalA : REFERENCE TO ST_CylinderHal;
+    HalB : REFERENCE TO ST_CylinderHal;
+    Recipe : I_RecipeProvider;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'project.module.clampStation.name', DescriptionKey := 'project.module.clampStation.description');
+Setup := Clamp.Setup(Name := CONCAT(Name, '.Clamp'), HalA := HalA, HalB := HalB, Recipe := Recipe);
+IF Setup THEN Setup := _M_Register(Clamp); END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{cb0a4dce-dbfc-4708-87fa-a67308ea8ca6}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+OutImm.Clamped := Clamp.OutImm.Clamped;
+OutImm.Unclamped := Clamp.OutImm.Unclamped;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{3b2ff215-c2ba-4457-a40c-bf9566f40c44}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation><ST><![CDATA[CASE _step OF
+    10:
+        OutCmd.CycleCompleted := FALSE;
+        _M_SetStep(StepNo := 100, StepName := 'project.step.commandClamp', Awaits := 0,
+            AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        Clamp.Abort := FALSE;
+        Clamp.Command := E_ClampCommand.CLAMP;
+        Clamp.Execute := TRUE;
+        _step := 20;
+    20:
+        _M_SetStep(StepNo := 110, StepName := 'project.step.awaitClamp', Awaits := Clamp,
+            AwaitingLabel := 'Clamp.CLAMP', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        IF Clamp.Done THEN
+            Clamp.Execute := FALSE;
+            _step := 30;
+        END_IF
+    30:
+        _M_SetStep(StepNo := 200, StepName := 'project.step.commandUnclamp', Awaits := 0,
+            AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        Clamp.Abort := FALSE;
+        Clamp.Command := E_ClampCommand.UNCLAMP;
+        Clamp.Execute := TRUE;
+        _step := 40;
+    40:
+        _M_SetStep(StepNo := 210, StepName := 'project.step.awaitUnclamp', Awaits := Clamp,
+            AwaitingLabel := 'Clamp.UNCLAMP', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        IF Clamp.Done THEN
+            Clamp.Execute := FALSE;
+            _step := 50;
+        END_IF
+    50:
+        OutCmd.CycleCompleted := TRUE;
+        IF _M_EndOfCycle() THEN _step := 10; END_IF
+ELSE
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_RouteManual" Id="{a4d4e397-d9f4-45f8-9930-b755d031dbd4}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_RouteManual : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_RouteManual := FALSE;
+IF TargetPath = Clamp.Name THEN
+    _M_RouteManual := Clamp.ManualCommand(Value := Value);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{278be415-0e66-48af-bc8f-241932ebdc43}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

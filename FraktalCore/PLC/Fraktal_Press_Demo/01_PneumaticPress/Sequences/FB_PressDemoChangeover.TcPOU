@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressDemoChangeover" Id="{27be7602-c702-dcca-822f-fb9fc2c73001}" SpecialFunc="None">
+    <Declaration><![CDATA[// CHANGEOVER mode chain (Core §6.2/§6.8 ST skeleton on FB_SequenceBase): validate
+// the selected model, establish the shared load-safe position, then ask the
+// operator (§6.11) to confirm tooling/material match before completing. The
+// 'repeat position' answer restarts the guided move via a backward jump (§6.10).
+FUNCTION_BLOCK FB_PressDemoChangeover EXTENDS FB_SequenceBase
+VAR
+    _decisionRequest : ST_DecisionRequest;
+    _answer : INT;
+    _modelSelected : BOOL;
+    {attribute 'OPC.UA.DA' := '0'}
+    _outCmd : REFERENCE TO ST_PneumaticPressOutCmd;
+    {attribute 'OPC.UA.DA' := '0'}
+    _model : REFERENCE TO ST_ModelId;
+    {attribute 'OPC.UA.DA' := '0'}
+    _loadPosition : FB_PressDemoLoadPosition;
+    _loadPositionRunning : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[]]></ST></Implementation>
+    <Method Name="Setup" Id="{27be7602-c702-dcca-822f-fb9fc2c73002}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Host : I_SequenceHost;
+END_VAR
+VAR_IN_OUT
+    PressRam : FB_CylinderCM;
+    Door : FB_CylinderCM;
+    PartSlide : FB_CylinderCM;
+    OutCmd : ST_PneumaticPressOutCmd;
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_outCmd REF= OutCmd;
+_model REF= Model;
+Setup := M_Attach(Host := Host) AND __ISVALIDREF(_outCmd) AND __ISVALIDREF(_model)
+    AND _loadPosition.Setup(Host := Host, PressRam := PressRam, Door := Door, PartSlide := PartSlide);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Reset" Id="{27be7602-c702-dcca-822f-fb9fc2c73003}">
+      <Declaration><![CDATA[METHOD M_Reset]]></Declaration>
+      <Implementation><ST><![CDATA[M_ResetBase(FirstStep := 0);
+_answer := 0;
+_loadPositionRunning := FALSE;
+_loadPosition.M_Reset(BaseStepNo := 0);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Run" Id="{27be7602-c702-dcca-822f-fb9fc2c73004}">
+      <Declaration><![CDATA[METHOD M_Run]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT _attached THEN
+    RETURN;
+END_IF
+CASE _step OF
+    0:  // initialize
+        M_Step(StepNo := 0, StepName := 'project.step.pressChangeoverInitialize',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        _outCmd.ChangeoverCompleted := FALSE;
+        _outCmd.Homed := FALSE;
+        _answer := 0;
+        _decisionRequest.Prompt := '';
+        M_ClearDecision();
+        _loadPositionRunning := FALSE;
+        _retVal := E_StepResult.ADVANCE;
+        M_Advance(OnAdvance := 800);
+    800:  // validate the transactionally-loaded model
+        M_Step(StepNo := 800, StepName := 'project.step.pressChangeoverValidateModel',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WAIT_OPERATOR, ExpectedTime := T#0S);
+        _modelSelected := M_Await(Idx := 1, Label := 'project.condition.pressModelSelected',
+            Ok := _model.ModelCode <> '');
+        IF _modelSelected THEN
+            _loadPositionRunning := FALSE;
+            _retVal := E_StepResult.ADVANCE;
+        END_IF
+        M_Advance(OnAdvance := 810);
+    810:  // shared load-safe position (composite step)
+        IF NOT _loadPositionRunning THEN
+            _loadPosition.M_Reset(BaseStepNo := 810);
+            _loadPositionRunning := TRUE;
+        END_IF
+        _loadPosition.M_Run();
+        IF _loadPosition.Done THEN
+            _loadPositionRunning := FALSE;
+            _retVal := E_StepResult.ADVANCE;
+        END_IF
+        M_Advance(OnAdvance := 870);
+    870:  // request tooling/material confirmation
+        M_Step(StepNo := 870, StepName := 'project.step.pressChangeoverRequestConfirmation',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WAIT_OPERATOR, ExpectedTime := T#0S);
+        _decisionRequest.Prompt := 'project.decision.pressChangeoverConfirm';
+        _decisionRequest.Options[1] := 'project.decision.confirmChangeover';
+        _decisionRequest.Options[2] := 'project.decision.repeatChangeoverPosition';
+        _decisionRequest.Default := 0;
+        _decisionRequest.Timeout := T#0S;
+        M_AskDecision(Req := _decisionRequest);
+        _retVal := E_StepResult.ADVANCE;
+        M_Advance(OnAdvance := 880);
+    880:  // await confirmation; JUMP1 = repeat the guided position
+        M_Step(StepNo := 880, StepName := 'project.step.pressChangeoverAwaitConfirmation',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WAIT_OPERATOR, ExpectedTime := T#0S);
+        _answer := M_TakeDecision();
+        IF _answer = 1 THEN
+            _retVal := E_StepResult.ADVANCE;
+        ELSIF _answer = 2 THEN
+            _loadPositionRunning := FALSE;      // repeat the guided position from the start
+            _retVal := E_StepResult.JUMP1;
+        ELSE
+            _modelSelected := M_Await(Idx := 1,
+                Label := 'project.condition.pressChangeoverConfirmation', Ok := FALSE);
+        END_IF
+        M_Advance(OnAdvance := 999, OnJump1 := 810);
+    999:  // complete
+        M_Step(StepNo := 999, StepName := 'project.step.pressChangeoverComplete',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        _outCmd.Homed := TRUE;
+        _outCmd.ChangeoverCompleted := TRUE;
+        M_Complete();
+ELSE
+    M_Fault(Reason := E_Reason.STEP_STALLED, DescriptionKey := 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

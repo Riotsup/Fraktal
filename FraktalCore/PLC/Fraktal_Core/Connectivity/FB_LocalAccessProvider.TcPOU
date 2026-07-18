@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_LocalAccessProvider" Id="{e6013f23-fcc9-42e1-ae2f-9c0279742929}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §7.7(c) — DEFAULT local provider: persistent user/PIN table. Remote/central
+// auth (server, LDAP via gateway) substitutes behind I_AccessProvider later.
+FUNCTION_BLOCK FB_LocalAccessProvider IMPLEMENTS I_AccessProvider
+VAR PERSISTENT
+    _users : ARRAY[1..PL_Fraktal.MAX_USERS] OF ST_UserRecord;
+    _n     : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// no cyclic body]]></ST>
+    </Implementation>
+    <Method Name="Authenticate" Id="{fe8a5189-9e6a-4024-a615-4875f3e2a8ca}">
+      <Declaration><![CDATA[METHOD Authenticate : E_AccessLevel
+VAR_INPUT
+    User : STRING(32);
+    Secret : STRING(32);
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Authenticate := E_AccessLevel.NONE;
+FOR i := 1 TO _n DO
+    IF (_users[i].User = User) AND (_users[i].Pin = Secret) THEN
+        Authenticate := _users[i].Level;
+        RETURN;
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Register" Id="{b51dad4c-34da-44b6-88a9-19f5db17f6af}">
+      <Declaration><![CDATA[// commissioning-time user entry (itself an ACCESS_POLICY-gated edit via the HMI).
+// Idempotent by User: re-registering updates PIN/level (the table is PERSISTENT,
+// so a composition root may register its defaults every boot without duplicates).
+METHOD Register : BOOL
+VAR_INPUT
+    User : STRING(32);
+    Pin : STRING(32);
+    Level : E_AccessLevel;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i := 1 TO _n DO
+    IF _users[i].User = User THEN
+        _users[i].Pin   := Pin;
+        _users[i].Level := Level;
+        Register := TRUE;
+        RETURN;
+    END_IF
+END_FOR
+IF _n >= PL_Fraktal.MAX_USERS THEN
+    Register := FALSE;
+    RETURN;
+END_IF
+_n := _n + 1;
+_users[_n].User  := User;
+_users[_n].Pin   := Pin;
+_users[_n].Level := Level;
+Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

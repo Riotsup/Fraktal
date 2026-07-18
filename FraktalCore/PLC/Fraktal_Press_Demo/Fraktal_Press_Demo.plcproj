@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion><SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{bd5689b4-80db-4a9f-bff2-754f96fd9ca3}</ProjectGuid>
+    <SubObjectsSortedByName>True</SubObjectsSortedByName>
+    <Name>Fraktal_Press_Demo</Name><ProgramVersion>3.1.4024.0</ProgramVersion>
+    <Application>{154b39b7-4605-4475-b8ce-a753a87bc41d}</Application>
+    <TypeSystem>{e805b961-4439-4c74-a605-11d769cc37e6}</TypeSystem>
+    <Implicit_Task_Info>{56aa30e6-f794-45f7-bb0b-8ac34ec4ee1d}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{a63003fd-b754-4110-b8c6-2e6e12c80751}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{eedba272-e15d-4d66-94f7-9ea0c4b8edfd}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{de971f8c-c574-49fa-81e1-8d1c7757bbce}</LibraryReferences>
+    <DefaultNamespace>Fraktal_Press_Demo</DefaultNamespace>
+    <Company>fraktal-automation</Company><Title>Fraktal_Press_Demo</Title>
+    <ProjectVersion>0.1.0.7</ProjectVersion><Released>false</Released>
+    <Author>fraktal-automation</Author>
+    <Description>CX2030 virtual/physical commissioning example: XTI-linked EK1200/EL1809/EL2809 HAL mapping, two-hand start, interlocked door/part slide, safety aliases, Control On/Off, AUTO/HOME/MANUAL, and model recipes.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Core §4.2: folders follow the instance tree. 00_System = composition root,
+         raw I/O + safety aliases, hardware driver, domain coordinator, withdrawal
+         layer, and the sim plant. 01_PneumaticPress = the root Unit's application
+         engineering data, grouped by owner-local role (Sequences, Release,
+         Recipes, and Io). -->
+    <Compile Include="PlcTask.TcTTO"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Sequences\FB_PressDemoLoadPosition.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Sequences\FB_PressDemoHome.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Sequences\FB_PressDemoChangeover.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Sequences\FB_PressDemoAuto.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Release\FB_PressDemoRelease.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\FB_PressDemoUnit.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\MAIN.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\GVL_PressIO.TcGVL"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\GVL_PressSafety.TcGVL"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\FB_PressIoDriver.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\FB_PressControlDomain.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\FB_PressOutputAuthority.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="00_System\FB_PressSimulationDriver.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Recipes\FB_PressRecipeCatalog.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Io\FB_PressIoCatalog.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="01_PneumaticPress\Io\GVL_PressFieldbus.TcGVL"><SubType>Code</SubType></Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="00_System" />
+    <Folder Include="00_System\Hardware" />
+    <Folder Include="01_PneumaticPress" />
+    <Folder Include="01_PneumaticPress\Sequences" />
+    <Folder Include="01_PneumaticPress\Release" />
+    <Folder Include="01_PneumaticPress\Recipes" />
+    <Folder Include="01_PneumaticPress\Io" />
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_Standard"><DefaultResolution>Tc2_Standard, * (Beckhoff Automation GmbH)</DefaultResolution><Namespace>Tc2_Standard</Namespace></PlaceholderReference>
+    <PlaceholderReference Include="Tc3_Module"><DefaultResolution>Tc3_Module, * (Beckhoff Automation GmbH)</DefaultResolution><Namespace>Tc3_Module</Namespace></PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Core"><DefaultResolution>Fraktal_Core, 0.1.0.3 (fraktal-automation)</DefaultResolution><Namespace>Fraktal_Core</Namespace></PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Modules"><DefaultResolution>Fraktal_Modules, 0.1.0.2 (fraktal-automation)</DefaultResolution><Namespace>Fraktal_Modules</Namespace></PlaceholderReference>
+  </ItemGroup>
+</Project>

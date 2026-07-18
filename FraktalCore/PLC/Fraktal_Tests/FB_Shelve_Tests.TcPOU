@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Shelve_Tests" Id="{721646f8-235c-463c-87d0-81c13f121fd7}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.10: shelving suppresses ANNUNCIATION only. Unrationalized -> refuse;
+// SAFETY -> refuse; a shelved MANUAL_RESET alarm STILL BLOCKS (the O7 test).
+// Auto-expiry timing is runtime-verified (F_Now-driven).
+FUNCTION_BLOCK FB_Shelve_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _log : FB_AlarmLog;
+    _s1, _s2, _s3 : INT;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _log.RegisterMeta(Reason := 100, OperatorAction := 'act', Consequence := 'cons', Shelvable := TRUE);
+    _s1 := _log.Raise(Reason := 100, Text := 'shelvable blocking',
+        Source := 'T', Severity := E_Severity.HIGH, Category := E_Category.PROCESS,
+        ResetClass := E_ResetClass.MANUAL_RESET);
+    _s2 := _log.Raise(Reason := 200, Text := 'no meta',
+        Source := 'T', Severity := E_Severity.LOW, Category := E_Category.PROCESS,
+        ResetClass := E_ResetClass.AUTO_RESET);
+    _s3 := _log.Raise(Reason := 300, Text := 'safety',
+        Source := 'T', Severity := E_Severity.HIGH, Category := E_Category.SAFETY,
+        ResetClass := E_ResetClass.MANUAL_RESET);
+    _w := TRUE;
+END_IF
+Unrationalized_refused();
+Safety_refused();
+Zero_duration_refused();
+Shelved_still_blocks();
+Reused_slot_clears_shelf_state();]]></ST>
+    </Implementation>
+    <Method Name="Unrationalized_refused" Id="{1af6cabb-12b7-494d-bfe3-7029612c6294}">
+      <Declaration><![CDATA[METHOD Unrationalized_refused]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Unrationalized_refused');
+AssertFalse(Condition := _log.Shelve(Slot := _s2, DurationS := 60),
+            Message := 'no rationalization record -> not shelvable (§8.10)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Zero_duration_refused" Id="{6b354a8a-a05f-4488-b38e-f37b2c35d487}">
+      <Declaration><![CDATA[METHOD Zero_duration_refused]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Zero_duration_refused');
+AssertFalse(Condition := _log.Shelve(Slot := _s1, DurationS := 0),
+            Message := 'zero-duration shelf cannot become permanent (8.10)');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Safety_refused" Id="{61359fa1-77ff-4c8e-a2d0-62816e5e6055}">
+      <Declaration><![CDATA[METHOD Safety_refused]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Safety_refused');
+_log.RegisterMeta(Reason := 300, OperatorAction := 'x', Consequence := 'y', Shelvable := TRUE);
+AssertFalse(Condition := _log.Shelve(Slot := _s3, DurationS := 60),
+            Message := 'SAFETY category never shelvable, even flagged (§8.10)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Reused_slot_clears_shelf_state" Id="{33df6889-a2b4-421c-acd2-204122c864d1}">
+      <Declaration><![CDATA[METHOD Reused_slot_clears_shelf_state
+VAR
+    slot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Reused_slot_clears_shelf_state');
+AssertTrue(Condition := _log.Shelve(Slot := _s1, DurationS := 60), Message := 'shelf before close');
+_log.Gone(Slot := _s1);
+_log.OperatorReset();
+slot := _log.Raise(Reason := 100, Text := 'reused slot',
+    Source := 'T', Severity := E_Severity.LOW, Category := E_Category.PROCESS,
+    ResetClass := E_ResetClass.AUTO_RESET);
+AssertFalse(Condition := _log.Active[slot].Shelved,
+            Message := 'new event never inherits a prior occupant shelf');
+_log.Gone(Slot := slot);
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Shelved_still_blocks" Id="{3de61e9c-2bcd-483f-ba89-06703432aee1}">
+      <Declaration><![CDATA[METHOD Shelved_still_blocks]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Shelved_still_blocks');
+AssertTrue(Condition := _log.Blocking, Message := 'MANUAL_RESET alarm blocks before shelve');
+AssertTrue(Condition := _log.Shelve(Slot := _s1, DurationS := 60), Message := 'rationalized+flagged shelves OK');
+AssertTrue(Condition := _log.Active[_s1].Shelved, Message := 'annunciation suppressed');
+AssertTrue(Condition := _log.Blocking, Message := 'STILL BLOCKING while shelved - control untouched (O7)');
+AssertTrue(Condition := _log.Unshelve(Slot := _s1), Message := 'unshelve restores');
+AssertFalse(Condition := _log.Active[_s1].Shelved, Message := 'flag cleared');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

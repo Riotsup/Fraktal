@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ModelId" Id="{1bba1161-2ca0-4564-ba2f-4b6efcf68f33}">
+    <Declaration><![CDATA[// Core §3.1b/§3.8a — a root Unit's active model identity (the changeover KEY).
+// Two roots may hold different ST_ModelId simultaneously (§3.1b).
+TYPE ST_ModelId :
+STRUCT
+    ModelCode : STRING(64);   // minimum required identity
+    Family    : STRING(64);   // optional
+    Variant   : STRING(64);   // optional
+    Fields    : ARRAY[1..PL_Fraktal.MAX_MODEL_FIELDS] OF ST_ModelField;  // optional client fields
+    NField    : INT;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

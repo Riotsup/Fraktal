@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{16ff25f6-3d6c-4c50-b333-3e7ea316f8a0}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §4.2 — a program with a FOREST of root Units (two independent stations).
+// Each root is ticked every scan; each owns its mode, cycle, model, and rollup.
+// The HMI (§3.13) may show both roots or scope to one.
+PROGRAM MAIN
+VAR
+    Recipe  : FB_LocalRecipeProvider;
+    Station : FB_LocalStationConfig;     // §3.8a default local station config
+    // --- two peer roots (no shared super-root in PLC code) ---
+    {attribute 'OPC.UA.DA' := '1'}
+    ClampCellA : FB_ClampStationUnit;
+    {attribute 'OPC.UA.DA' := '1'}
+    ClampCellB : FB_ClampStationUnit;
+    _init : BOOL;
+    _plate : ST_Nameplate;   // §3.10.1 example identity
+    _modelA, _modelB : ST_ModelId;
+    HalA1, HalA2, HalB1, HalB2 : ST_CylinderHal;
+    SimA1, SimA2, SimB1, SimB2 : FB_CylinderSim;
+    CylPar : ST_CylinderParCfg;
+    ClampPar : ST_ClampParCfg;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _init THEN
+    _init := TRUE;
+    Recipe.Register(ModelCode := '', RecipeKey := 'CylinderCM', pData := ADR(CylPar), Size := SIZEOF(CylPar));
+    Recipe.Register(ModelCode := '', RecipeKey := 'ClampEM',    pData := ADR(ClampPar), Size := SIZEOF(ClampPar));
+    ClampCellA.Setup(Name := 'ClampCellA', HalA := HalA1, HalB := HalA2, Recipe := Recipe);
+    ClampCellB.Setup(Name := 'ClampCellB', HalA := HalB1, HalB := HalB2, Recipe := Recipe);
+    SimA1.Setup(HalRef := HalA1, TravelTime := T#0S);
+    SimA2.Setup(HalRef := HalA2, TravelTime := T#0S);
+    SimB1.Setup(HalRef := HalB1, TravelTime := T#0S);
+    SimB2.Setup(HalRef := HalB2, TravelTime := T#0S);
+    _modelA.ModelCode := 'CLAMP-A';
+    _modelB.ModelCode := 'CLAMP-B';
+    ClampCellA.SetModel(Id := _modelA);
+    ClampCellB.SetModel(Id := _modelB);
+    // §3.10.1: a root Unit SHALL publish a digital nameplate (identity set at the
+    // instantiation site — the machine builder knows what was shipped, not the type)
+    _plate.ProductUri         := 'https://example.org/assets/clampcell/SN-2026-0001';
+    _plate.ManufacturerName   := 'Example Machines GmbH';
+    _plate.ProductDesignation := 'Dual-Cylinder Clamp Cell';
+    _plate.SerialNumber       := 'SN-2026-0001';
+    _plate.YearOfConstruction := '2026';
+    _plate.SoftwareVersion    := 'Fraktal 1.0';
+    _plate.DocumentationUrl   := 'https://example.org/docs/clampcell';
+    ClampCellA.SetNameplate(Plate := _plate);
+    // §8.9 rationalization: operator action + consequence + shelvability per reason
+    ClampCellA.AlarmLog.RegisterMeta(Reason := PL_ModuleReasons.CYL_DISCREPANCY,
+        OperatorAction := 'Check both position sensors and cylinder air supply; test in MANUAL',
+        Consequence := 'Clamp position unproven - parts may be unclamped during process',
+        Shelvable := FALSE);
+    ClampCellA.AlarmLog.RegisterMeta(Reason := PL_ModuleReasons.CYL_WORK_NOT_REACHED,
+        OperatorAction := 'Inspect for mechanical jam; verify air pressure at the valve',
+        Consequence := 'Cycle blocked until the cylinder reaches position',
+        Shelvable := TRUE);
+    _plate.SerialNumber       := 'SN-2026-0002';
+    _plate.ProductUri         := 'https://example.org/assets/clampcell/SN-2026-0002';
+    ClampCellB.SetNameplate(Plate := _plate);
+END_IF
+// simulated plant, then the two independent roots:
+SimA1();
+SimA2();
+SimB1();
+SimB2();
+ClampCellA();
+ClampCellB();]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

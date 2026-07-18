@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ProbeConnector" Id="{c59dfe4e-41d8-46f2-8e29-cd61ea27b721}" SpecialFunc="None">
+    <Declaration><![CDATA[// minimal transport for the connector base suite
+FUNCTION_BLOCK FB_ProbeConnector EXTENDS FB_DeviceConnectorBase
+VAR_INPUT
+    SimOpenOk : BOOL := TRUE;
+    SimHb     : E_HbResult := E_HbResult.OK;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="_M_Close" Id="{fa6aa4d5-061c-42cf-a901-aca4f5dc4c47}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Close : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_Close := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_HbPoll" Id="{dbda08f4-7a78-44ab-8f25-81876beaeda9}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_HbPoll : E_HbResult]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_HbPoll := SimHb;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_HbStart" Id="{324ff04c-82eb-40aa-88f8-d148cf35637c}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_HbStart : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_HbStart := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Open" Id="{508ced4c-bc17-44b5-8420-96a7b685819f}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Open : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_Open := SimOpenOk;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

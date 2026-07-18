@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_PneumaticPressParCfg" Id="{db5c3778-ac9e-4f51-bdbd-0fbd1c315ff9}">
+    <Declaration><![CDATA[// Core §3.8 ParCfg (SchemaVersion first; adding a member = schema change).
+// v2 adds the §8.11 performance references: per-model ideal cycle (OEE
+// Performance denominator, §8.5.1) and the WORK-time degradation baseline
+// (§8.11.4(d); 0 = watch off).
+TYPE ST_PneumaticPressParCfg :
+STRUCT
+    SchemaVersion       : UINT := 2;
+    PressSettleTime     : TIME := T#500MS;
+    TransferSettleTime  : TIME := T#100MS;
+    RequireTwoHandStart : BOOL := TRUE;
+    IdealCycleMs        : UDINT := 0;    // §8.5.1 — 0 = Performance not computed
+    BaselineWorkMs      : UDINT := 0;    // §8.11.4(d) — 0 = degradation watch off
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

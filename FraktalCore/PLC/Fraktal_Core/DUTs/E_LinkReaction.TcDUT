@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_LinkReaction" Id="{310796b9-ef18-4e7a-98f2-5ef7a6e20f50}">
+    <Declaration><![CDATA[// Core §3.15 — configured reaction of the fronting CM to link loss
+{attribute 'qualified_only'}
+TYPE E_LinkReaction : (HOLD := 0, ABORT := 1, MODE_STOP := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

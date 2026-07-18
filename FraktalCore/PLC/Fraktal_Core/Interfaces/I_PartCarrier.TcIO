@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_PartCarrier" Id="{72c97495-76ef-41aa-a5b9-d2d6628d808d}">
+    <Declaration><![CDATA[// Core §3.16.2 — source-agnostic part carrier (mirrors I_RecipeProvider).
+INTERFACE I_PartCarrier]]></Declaration>
+    <Method Name="ReadContext" Id="{817bf672-db29-4cc2-802f-912dd5eb379d}">
+      <Declaration><![CDATA[// FALSE => caller faults with CARRIER_READ_FAILED (Core §3.16.2)
+METHOD ReadContext : BOOL
+VAR_IN_OUT
+    Ctx : ST_PartContext;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="WriteResult" Id="{bc4ca89d-3eaf-4a91-993b-e1c938c993d6}">
+      <Declaration><![CDATA[// FALSE => caller faults with CARRIER_WRITE_FAILED; MUST precede EVENT_PART_PROCESSED
+METHOD WriteResult : BOOL
+VAR_INPUT
+    Ctx : ST_PartContext;
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

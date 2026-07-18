@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="PL_ModuleReasons" Id="{05d79b8d-9fe0-414a-9d75-af70b0ad83de}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+// Core §8.8 band constants (band-extensibility rule): cylinder CM 10100-10199,
+// clamp EM 11000-11999 — registered in the Core §8.8 registry.
+VAR_GLOBAL CONSTANT
+    CYL_NOT_EXTENDED    : DINT := 10101;
+    CYL_NOT_RETRACTED   : DINT := 10102;
+    CYL_BOTH_SENSORS    : DINT := 10103;
+    CLAMP_NOT_CONFIRMED : DINT := 11001;
+    // basic cylinder 10200-10299
+    CYL_HOME_NOT_REACHED : DINT := 10111;   // timeout moving to home
+    CYL_WORK_NOT_REACHED : DINT := 10112;   // timeout moving to work
+    CYL_POS_IMPLAUSIBLE  : DINT := 10113;   // home AND work sensor confirmed at once (implausible)
+    CYL_SENSOR_LOST      : DINT := 10114;   // confirmed position sensor dropped while holding
+    CYL_DISCREPANCY      : DINT := 10116;   // redundant sensors for one position disagree > DiscrepancyTime
+    CYL_CFG_INVALID      : DINT := 10115;   // TravelTime >= MoveTimeout, or no sensor+no travel
+    // power-group CM 10500-10599
+    POWER_ENABLE_WITHHELD : DINT := 10501;
+    POWER_FEEDBACK_TIMEOUT: DINT := 10502;
+    // air-pressure monitor CM 10600-10699
+    AIR_SWITCH_CONFLICT    : DINT := 10601;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

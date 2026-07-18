@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_CylinderIoIdentity" Id="{11932db4-263b-4611-8232-46e3b352fd70}">
+    <Declaration><![CDATA[// Physical identity injection for the four semantic I/O roles of a cylinder.
+// The reusable CM never knows terminal models, channel numbers or project tags.
+TYPE ST_CylinderIoIdentity :
+STRUCT
+    ExtendedSensor : ST_IoPointIdentity;
+    RetractedSensor : ST_IoPointIdentity;
+    ExtendOutput : ST_IoPointIdentity;
+    RetractOutput : ST_IoPointIdentity;
+    ExtendedTimeoutKey : STRING(255);
+    RetractedTimeoutKey : STRING(255);
+    BothSensorsKey : STRING(255);
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

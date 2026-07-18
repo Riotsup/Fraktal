@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_PressIO" Id="{3e5e0406-1d40-4cf0-bbd7-643fac8990b0}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+// CX2030 local EtherCAT process image, reconciled with the supplied XTI export.
+// TcLinkTo owns the physical link by exact terminal/channel/PDO-entry name;
+// AT %I*/%Q* keeps the compiler-selected process-image offset non-positional.
+VAR_GLOBAL
+    // =000+S-K010B1 (EL1809) inputs
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 1^_101B301A'}
+    _101B301A AT %I* : BOOL;       // Ch1 feeder retracted = logical slide INSIDE
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 2^_101B301B'}
+    _101B301B AT %I* : BOOL;       // Ch2 feeder extended  = logical slide OUTSIDE
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 3^_101B201A'}
+    _101B201A AT %I* : BOOL;       // Ch3 door closed
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 4^_101B201B'}
+    _101B201B AT %I* : BOOL;       // Ch4 door open
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 5^_101B202A'}
+    _101B202A AT %I* : BOOL;       // Ch5 press down
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 6^_101B202B'}
+    _101B202B AT %I* : BOOL;       // Ch6 press up
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 7^_101S101'}
+    _101S101  AT %I* : BOOL;       // Ch7 right two-hand raw button
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 8^_101S102'}
+    _101S102  AT %I* : BOOL;       // Ch8 left two-hand raw button
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 10^_000MB085A_2'}
+    _000MB085A_2 AT %I* : BOOL;    // Ch10 compressed air below 0.3 bar
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 11^_000MB085A_4'}
+    _000MB085A_4 AT %I* : BOOL;    // Ch11 compressed air above 4.5 bar
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 12^_101B601'}
+    _101B601 AT %I* : BOOL;        // Ch12 part present
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 14^_000K911_Y32'}
+    _000K911_Y32 AT %I* : BOOL;    // Ch14 Control On feedback
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010B1 (EL1809)]^Channel 15^_000K910A'}
+    _000K910A AT %I* : BOOL;       // Ch15 ordinary E-stop healthy mirror only
+
+    // =000+S-K010C1 (EL2809) outputs
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 1^_101K301A'}
+    _101K301A AT %Q* : BOOL;       // Ch1 feeder backward = move inside
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 2^_101K301B'}
+    _101K301B AT %Q* : BOOL;       // Ch2 feeder forward  = move outside
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 3^_101K201A'}
+    _101K201A AT %Q* : BOOL;       // Ch3 close door
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 4^_101K201B'}
+    _101K201B AT %Q* : BOOL;       // Ch4 open door
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 5^_101K202A'}
+    _101K202A AT %Q* : BOOL;       // Ch5 press downward
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 6^_101K202B'}
+    _101K202B AT %Q* : BOOL;       // Ch6 press upward
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 7^_101P101'}
+    _101P101  AT %Q* : BOOL;       // Ch7 right two-hand lamp
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 8^_101P102'}
+    _101P102  AT %Q* : BOOL;       // Ch8 left two-hand lamp
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 10^_000K951_A1'}
+    _000K951_A1 AT %Q* : BOOL;     // Ch10 SwitchControlOn functional request
+    {attribute 'TcLinkTo' := 'TIIB[=000+S-K010C1 (EL2809)]^Channel 11^_000K911_A1'}
+    _000K911_A1 AT %Q* : BOOL;     // Ch11 EnableControlOn functional request
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

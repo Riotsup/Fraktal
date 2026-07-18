@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <GVL Name="GVL_PressSafety" Id="{97d25871-3b8a-44ed-8257-cc39907d43af}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+// Read-only aliases to results produced outside the standard PLC by TwinSAFE
+// or a validated external safety system. They intentionally default FALSE so
+// physical mode cannot energize until commissioning supplies every result.
+// These variables do not themselves implement a safety function.
+VAR_GLOBAL
+    _EStopOk               AT %I* : BOOL;
+    _GuardClosed           AT %I* : BOOL;
+    _TwoHandActive         AT %I* : BOOL;
+    _PneumaticPermit       AT %I* : BOOL;
+    _SafetyFieldbusHealthy AT %I* : BOOL;
+    _StandardIoHealthy     AT %I* : BOOL;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

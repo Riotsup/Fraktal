@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PartTrace_Tests" Id="{2e6b0c94-8f5d-4a37-b1c8-6f2da4e07b55}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.16 under test: the shipped BY_POSITION carrier assigns station-local
+// serials, keeps a bounded produced-results ring, and a carried Uid is preserved
+// (RFID/host compatibility). Unit-level event wiring is exercised by the press
+// AUTO suite; carrier logic is proven here scan-exactly.
+FUNCTION_BLOCK FB_PartTrace_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _pc  : FB_LocalPartCarrier;
+    _ctx : ST_PartContext;
+    _w   : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Carrier_assigns_serials_and_stores_results();
+Carrier_preserves_carried_identity();]]></ST>
+    </Implementation>
+    <Method Name="Carrier_assigns_serials_and_stores_results" Id="{5b1f7d20-9c44-4e8a-af63-08d217c95e31}">
+      <Declaration><![CDATA[METHOD Carrier_assigns_serials_and_stores_results]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Carrier_assigns_serials_and_stores_results');
+IF NOT _w THEN
+    _pc.Setup(UidPrefix := 'P-');
+    _w := TRUE;
+END_IF
+_ctx.Uid := '';
+AssertTrue(Condition := _pc.ReadContext(Ctx := _ctx), Message := 'read assigns identity (3.16.2)');
+AssertEquals_STRING(Expected := 'P-1', Actual := _ctx.Uid, Message := 'serial = prefix + counter');
+AssertTrue(Condition := _ctx.Present, Message := 'part present after read');
+AssertTrue(Condition := _ctx.CarrierKind = E_CarrierKind.BY_POSITION,
+           Message := 'carrier declares BY_POSITION');
+_ctx.Result.Verdict := E_Verdict.OK;
+AssertTrue(Condition := _pc.WriteResult(Ctx := _ctx), Message := 'result accepted before PROCESSED (3.16.3)');
+AssertTrue(Condition := _pc.ProducedHead = 1, Message := 'produced ring advanced');
+AssertTrue(Condition := _pc.Produced[1].Verdict = E_Verdict.OK, Message := 'verdict stored');
+AssertEquals_STRING(Expected := 'P-1', Actual := _pc.ProducedUids[1], Message := 'uid stored with result');
+_ctx.Uid := '';
+_pc.ReadContext(Ctx := _ctx);
+AssertEquals_STRING(Expected := 'P-2', Actual := _ctx.Uid, Message := 'next part gets the next serial');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Carrier_preserves_carried_identity" Id="{93c07f4a-21d6-4d5b-8be2-4a90ff1e2c68}">
+      <Declaration><![CDATA[METHOD Carrier_preserves_carried_identity]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Carrier_preserves_carried_identity');
+_ctx.Uid := 'HOST-42';
+AssertTrue(Condition := _pc.ReadContext(Ctx := _ctx), Message := 'read with carried identity');
+AssertEquals_STRING(Expected := 'HOST-42', Actual := _ctx.Uid,
+    Message := 'a carried Uid is never overwritten (3.16.2)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

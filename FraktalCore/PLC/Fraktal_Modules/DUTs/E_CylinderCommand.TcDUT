@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_CylinderCommand" Id="{73e68c86-09bd-4865-9c57-a7e1156f5c00}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_CylinderCommand : (NONE := 0, EXTEND := 1, RETRACT := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

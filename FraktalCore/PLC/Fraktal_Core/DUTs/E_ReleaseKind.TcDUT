@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ReleaseKind" Id="{6e162906-da5f-4fbb-b4b6-20def8011103}">
+    <Declaration><![CDATA[// Core §7.8 — category of a blocking reason (for HMI grouping/icons).
+{attribute 'qualified_only'}
+TYPE E_ReleaseKind : (MODE := 0, ACCESS := 1, ALARM := 2, INTERLOCK := 3, OTHER := 4) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

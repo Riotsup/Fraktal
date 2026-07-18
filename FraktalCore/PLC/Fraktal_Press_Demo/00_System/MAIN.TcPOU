@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{55a765e4-afc1-4fdb-91af-a60d34c2c143}" SpecialFunc="None">
+    <Declaration><![CDATA[// Virtual-commissioning application for one pneumatic press Unit.
+// IMPORTANT: the Safe* values below simulate TwinSAFE outputs only. A deployed
+// machine maps certified E-stop/two-hand/guard/safe-valve results from TwinSAFE.
+PROGRAM MAIN
+VAR
+    RecipeCatalog : FB_PressRecipeCatalog;
+    PartCarrier : FB_LocalPartCarrier;    // §3.16.2 BY_POSITION identity + local result ring
+    AccessUsers : FB_LocalAccessProvider; // §7.7 commissioning user/PIN table
+    // TF6100 TMC-Filtered publication starts at the deployed root instance.
+    // The marker is inherited by PneumaticPress's published child symbols.
+    {attribute 'OPC.UA.DA' := '1'}
+    PneumaticPress : FB_PressDemoUnit;
+    IoCatalog : FB_PressIoCatalog;
+    IoDriver : FB_PressIoDriver;
+    ControlDomain : FB_PressControlDomain;
+    OutputAuthority : FB_PressOutputAuthority;
+    SimulationDriver : FB_PressSimulationDriver;
+    PressHal, DoorHal, SlideHal : ST_CylinderHal;
+    TwoHandHal : ST_TwoHandHal;
+    PowerHal : ST_PowerGroupHal;
+    PartPresentHal : ST_DigitalInputHal;
+    AirPressureHal : ST_AirPressureHal;
+    InitialModel : ST_ModelId;
+    Plate : ST_Nameplate;
+    Init : BOOL;
+    UseSimulation : BOOL := TRUE; // set FALSE only after I/O + safety aliases are linked
+    ControlCircuitMappingConfirmed : BOOL; // verify K951/K911 electrical semantics first
+
+    // Simulation controls. E-stop is normally closed: TRUE = healthy circuit.
+    SimEStopNc : BOOL := TRUE;
+    SimControlOnButton : BOOL;
+    SimControlOffButton : BOOL;
+    SimLeftButton : BOOL;
+    SimRightButton : BOOL;
+    SimSafetyValveOk : BOOL := TRUE;
+    SimFieldbusHealthy : BOOL := TRUE;
+    SimPartPresent : BOOL := TRUE;
+    SimAirPressureOk : BOOL := TRUE;
+    SafeEStopOk : BOOL;
+    SafeGuardClosed : BOOL;
+    SafeTwoHandActive : BOOL;
+    SafePneumaticPermit : BOOL;
+    SafetyFieldbusHealthy : BOOL;
+    StandardIoHealthy : BOOL;
+    RawEStopHealthy : BOOL;
+    LampsOn : BOOL;
+    ControlOnEdge : R_TRIG;
+    ControlOffEdge : R_TRIG;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[IF NOT Init THEN
+    Init := TRUE;
+    // Initial mechanically safe/load position: ram up, door open, slide outside.
+    PressHal.RetractedFb := TRUE;
+    DoorHal.RetractedFb := TRUE;
+    SlideHal.RetractedFb := TRUE;
+    RecipeCatalog.Setup(UnitRef := PneumaticPress);
+    PneumaticPress.Setup(Name := 'PneumaticPress', PressHal := PressHal, DoorHal := DoorHal,
+        SlideHal := SlideHal, TwoHandHal := TwoHandHal, PowerHal := PowerHal,
+        PartPresentHal := PartPresentHal, AirPressureHal := AirPressureHal,
+        Recipe := RecipeCatalog.Provider);
+    IoDriver.Setup(UnitRef := PneumaticPress);
+    IoCatalog.Setup(UnitRef := PneumaticPress);
+    ControlDomain.Setup(UnitRef := PneumaticPress);
+    SimulationDriver.Setup(PressHal := PressHal, DoorHal := DoorHal, SlideHal := SlideHal);
+    InitialModel.ModelCode := 'ALUMINUM';
+    PneumaticPress.SetModel(Id := InitialModel);
+    Plate.ProductUri := 'urn:fraktal:demo:pneumatic-press:2026-0001';
+    Plate.ManufacturerName := 'Fraktal Example Project';
+    Plate.ProductDesignation := 'Pneumatic Press Training Cell';
+    Plate.SerialNumber := 'PRESS-DEMO-2026-0001';
+    Plate.YearOfConstruction := '2026';
+    Plate.SoftwareVersion := 'Fraktal Press Demo 0.1';
+    PneumaticPress.SetNameplate(Plate := Plate);
+    PneumaticPress.AlarmLog.RegisterMeta(Reason := E_Reason.INTERLOCK_DROPPED,
+        OperatorAction := 'project.alarmAction.pressInterlock',
+        Consequence := 'project.alarmConsequence.pressInterlock', Shelvable := FALSE);
+    // §8.9 rationalization: per-reason operator action + consequence for the HMI join
+    PneumaticPress.AlarmLog.RegisterMeta(Reason := E_Reason.PERMISSIVE_NOT_MET,
+        OperatorAction := 'project.alarmAction.pressAirPressure',
+        Consequence := 'project.alarmConsequence.pressAirPressure', Shelvable := FALSE);
+    PneumaticPress.AlarmLog.RegisterMeta(Reason := E_Reason.RECIPE_INVALID,
+        OperatorAction := 'project.alarmAction.pressRecipe',
+        Consequence := 'project.alarmConsequence.pressRecipe', Shelvable := FALSE);
+    PneumaticPress.AlarmLog.RegisterMeta(Reason := PL_ModuleReasons.CYL_WORK_NOT_REACHED,
+        OperatorAction := 'project.alarmAction.pressCylinderPosition',
+        Consequence := 'project.alarmConsequence.pressCylinderPosition', Shelvable := FALSE);
+    PneumaticPress.AlarmLog.RegisterMeta(Reason := PL_ModuleReasons.CYL_HOME_NOT_REACHED,
+        OperatorAction := 'project.alarmAction.pressCylinderPosition',
+        Consequence := 'project.alarmConsequence.pressCylinderPosition', Shelvable := FALSE);
+    // §3.16 traceability: station-local BY_POSITION serials; RFID/host substitutes later
+    PartCarrier.Setup(UidPrefix := 'PRESS-2026-');
+    PneumaticPress.SetPartCarrier(Carrier := PartCarrier);
+    // §7.7 access: commissioning users (policy stays shipped-open; login is optional)
+    AccessUsers.Register(User := 'operator', Pin := '1111', Level := E_AccessLevel.OPERATOR);
+    AccessUsers.Register(User := 'tech', Pin := '2222', Level := E_AccessLevel.TECHNICIAN);
+    AccessUsers.Register(User := 'admin', Pin := '9999', Level := E_AccessLevel.ADMIN);
+    PneumaticPress.Access.Setup(Provider := AccessUsers, pAlarmLog := ADR(PneumaticPress.AlarmLog));
+END_IF
+
+// Ordinary simulated local station buttons. The worksheet does not list real
+// Control On/Off input buttons; physical operation therefore uses HMI requests
+// until those devices are identified. Control Off wins simultaneous edges.
+ControlOnEdge(CLK := UseSimulation AND SimControlOnButton);
+ControlOffEdge(CLK := UseSimulation AND SimControlOffButton);
+IF ControlOffEdge.Q THEN
+    PneumaticPress.RequestLocalControl(ControlOn := FALSE);
+ELSIF ControlOnEdge.Q THEN
+    PneumaticPress.RequestLocalControl(ControlOn := TRUE);
+END_IF
+
+IF UseSimulation THEN
+    SimulationDriver.M_ReadInputs(DoorHal := DoorHal, TwoHandHal := TwoHandHal,
+        PowerHal := PowerHal, PartPresentHal := PartPresentHal,
+        AirPressureHal := AirPressureHal, RawEStopHealthy := RawEStopHealthy,
+        SafeEStopOk := SafeEStopOk, SafeGuardClosed := SafeGuardClosed,
+        SafeTwoHandActive := SafeTwoHandActive,
+        SafePneumaticPermit := SafePneumaticPermit,
+        SafetyFieldbusHealthy := SafetyFieldbusHealthy,
+        StandardIoHealthy := StandardIoHealthy, SimEStopNc := SimEStopNc,
+        SimLeftButton := SimLeftButton, SimRightButton := SimRightButton,
+        SimSafetyValveOk := SimSafetyValveOk,
+        SimFieldbusHealthy := SimFieldbusHealthy,
+        SimPartPresent := SimPartPresent, SimAirPressureOk := SimAirPressureOk,
+        PowerRequested := PowerHal.EnableRequestOut);
+ELSE
+    // The project Hardware Driver is the only raw process-image consumer.
+    IoDriver.M_ReadInputs(PressHal := PressHal, DoorHal := DoorHal,
+        SlideHal := SlideHal, TwoHandHal := TwoHandHal, PowerHal := PowerHal,
+        PartPresentHal := PartPresentHal, AirPressureHal := AirPressureHal,
+        RawEStopHealthy := RawEStopHealthy, SafeEStopOk := SafeEStopOk,
+        SafeGuardClosed := SafeGuardClosed, SafeTwoHandActive := SafeTwoHandActive,
+        SafePneumaticPermit := SafePneumaticPermit,
+        SafetyFieldbusHealthy := SafetyFieldbusHealthy,
+        StandardIoHealthy := StandardIoHealthy);
+END_IF
+TwoHandHal.SafeActive := SafeTwoHandActive;
+TwoHandHal.FieldbusHealthy := SafetyFieldbusHealthy;
+PowerHal.SafetyPermit := SafePneumaticPermit;
+PowerHal.FieldbusHealthy := StandardIoHealthy;
+
+ControlDomain.M_Update(SafeEStopOk := SafeEStopOk,
+    SafeGuardClosed := SafeGuardClosed, SafeTwoHandActive := SafeTwoHandActive,
+    SafePneumaticPermit := SafePneumaticPermit,
+    SafetyFieldbusHealthy := SafetyFieldbusHealthy,
+    StandardIoHealthy := StandardIoHealthy, RawEStopHealthy := RawEStopHealthy,
+    PowerFeedback := PowerHal.PowerFeedback,
+    PowerRequested := PowerHal.EnableRequestOut,
+    TwoHandFieldbusHealthy := TwoHandHal.FieldbusHealthy);
+PneumaticPress.ControlDomain := ControlDomain.Status;
+
+// First execute ordinary control, then apply a standard-PLC withdrawal layer.
+// This is defense in depth only: the real safety system owns pneumatic removal.
+PneumaticPress();
+OutputAuthority.M_Apply(PressHal := PressHal, DoorHal := DoorHal,
+    SlideHal := SlideHal, PowerFeedback := PowerHal.PowerFeedback,
+    SafePneumaticPermit := SafePneumaticPermit,
+    StandardIoHealthy := StandardIoHealthy,
+    HazardousRamPermit := SafeGuardClosed AND SafeTwoHandActive);
+IF UseSimulation THEN
+    // Never leave physical outputs energized while virtual commissioning.
+    IoDriver.M_ClearOutputs();
+    SimulationDriver.M_RefreshPlant();
+ELSE
+    LampsOn := PneumaticPress.TwoHand.OutImm.Armed
+        AND ControlDomain.Status.ReadyForStart
+        AND PneumaticPress.OutImm.PartPresent AND PneumaticPress.OutImm.AirPressureOk;
+    IoDriver.M_WriteOutputs(PressHal := PressHal, DoorHal := DoorHal,
+        SlideHal := SlideHal, PowerHal := PowerHal, LampsOn := LampsOn,
+        ControlCircuitMappingConfirmed := ControlCircuitMappingConfirmed);
+END_IF
+IoDriver.M_RefreshFieldbus(StandardIoHealthy := StandardIoHealthy);
+]]></ST></Implementation>
+  </POU>
+</TcPlcObject>

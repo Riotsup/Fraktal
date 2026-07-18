@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_OeeSample" Id="{2062c8e0-c91a-4c1f-99cc-b6e3a0a4cb8e}">
+    <Declaration><![CDATA[// Core §8.5.1 — one trend sample for the HMI sparkline ring.
+TYPE ST_OeeSample :
+STRUCT
+    Availability : REAL;
+    Performance  : REAL;
+    Quality      : REAL;
+    Oee          : REAL;
+    OeeValid     : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

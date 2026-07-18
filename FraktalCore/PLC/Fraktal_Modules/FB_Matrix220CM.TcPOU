@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Matrix220CM" Id="{2b652d9c-189c-4127-8713-ac85b48158f3}" SpecialFunc="None">
+    <Declaration><![CDATA[// MODEL PRESET (Core §3.15.1a): Datalogic Matrix 220 = the generic
+// FB_TcpCodeReaderCM with preconfigured host-mode strings. Configuration, not
+// code. Extend ONLY for Matrix-specific features. VERIFY strings vs the Matrix
+// host-mode manual for the deployed configuration.
+FUNCTION_BLOCK FB_Matrix220CM EXTENDS FB_TcpCodeReaderCM
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{5de5f342-2039-4ad7-be38-6bd7f920e545}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    Chan : I_ByteChannel;
+    DevHost : STRING(80);
+    DevPort : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ParCfg.TriggerCmd := 'T';  // Matrix host-mode preset — VERIFY vs manual
+ParCfg.NoReadText := 'NOREAD';
+Setup := SUPER^.Setup(Name := Name, Chan := Chan, DevHost := DevHost, DevPort := DevPort);]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

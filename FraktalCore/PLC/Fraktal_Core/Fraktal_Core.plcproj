@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{e44647c8-d00f-4060-b6e0-4533ad6c2f44}</ProjectGuid>
+    <SubObjectsSortedByName>True</SubObjectsSortedByName>
+    <Name>Fraktal_Core</Name>
+    <ProgramVersion>3.1.4024.0</ProgramVersion>
+    <Application>{8e318c64-2ca1-4dbe-95f6-56f80a2853d3}</Application>
+    <TypeSystem>{3fe09d0f-b228-48ee-8be6-a789aab6bdfa}</TypeSystem>
+    <Implicit_Task_Info>{6485aa69-83fb-4c32-8c97-31dde5b2c871}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{fb361647-c2b6-4585-8a09-7f1f00a9e2b0}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{122cb588-91d0-45d4-a703-cb808cda421a}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{d9e5f645-26be-4713-87b5-f4d3ea99a8cb}</LibraryReferences>
+    <DefaultNamespace>Fraktal_Core</DefaultNamespace>
+    <Placeholder>Fraktal_Core</Placeholder>
+    <Company>fraktal-automation</Company>
+    <Title>Fraktal_Core</Title>
+    <ProjectVersion>0.1.0.3</ProjectVersion>
+    <Released>false</Released>
+    <Author>fraktal-automation</Author>
+    <Description>Fraktal Core framework library: contracts, base classes (CM/EM/Unit), PermIntlk, profiler, connector base, recipe provider (Core 2.2).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="BaseClasses" />
+    <Folder Include="Connectivity" />
+    <Folder Include="DeviceCMs" />
+    <Folder Include="DUTs" />
+    <Folder Include="Interfaces" />
+    <Folder Include="Params" />
+    <Folder Include="PermIntlk" />
+    <Folder Include="Platform" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="BaseClasses\FB_AccessManager.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_AlarmLog.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_AsciiDeviceCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_ModuleBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_ControlModuleBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_CycleProfiler.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_CompositeModuleBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_EquipmentModuleBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_SequenceBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="BaseClasses\FB_UnitBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_DeviceConnectorBase.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_EcFieldbusScanner.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_IoTopologyPublisher.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_LocalAccessProvider.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_LocalPartCarrier.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_LocalRecipeProvider.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_LocalStationConfig.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_SimByteChannel.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Connectivity\FB_TcpChannelTc3.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_AccessLevel.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_AlarmState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ByteChannelState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_CarrierKind.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_Category.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ChannelDir.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ChannelKind.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ExecState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_FieldbusLossReaction.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\E_GatedAction.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_HbResult.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_LinkReaction.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_MachineState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_Mode.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ModeSwitchShield.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_PowerGroupKind.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\E_PowerState.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\E_SafetyDeviceKind.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\E_SafetyState.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\E_ModeSwitchStyle.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ModuleType.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_NodeState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_Reason.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_RecipeSource.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ReleaseKind.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ResetClass.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_RunStyle.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_Severity.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_StepResult.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_TimeClass.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_Verdict.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_AccessPolicy.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_AlarmEvent.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_AlarmMeta.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_BusNode.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_CommandInfo.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_CondRecord.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_CycleProfile.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_CycleSummary.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_DecisionRequest.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_Diagnostic.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_FieldbusTopology.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_HmiRequestKind.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_HmiRequest.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_HmiResponse.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_IntlkCond.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_IoChannel.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_IoPointIdentity.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_MeasRecord.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ModePolicy.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ModelField.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ModelId.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ModuleStatus.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ControlDomainStatus.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ControlPowerStatus.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PowerGroupStatus.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_SafetyDeviceStatus.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_SafetyStatus.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ModuleTiming.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_Nameplate.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_Oee.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_OeeSample.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_PartContext.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_PartResult.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ReleaseReason.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ReleaseReport.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_StepRecord.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_StepTiming.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_TimingRow.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_UserRecord.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DeviceCMs\FB_TcpCodeReaderCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DeviceCMs\FB_TcpVisionCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_TcpVisionParCfg.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpVisionParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpVisionOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpVisionOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpCodeReaderParCfg.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpCodeReaderParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpCodeReaderOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TcpCodeReaderOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="Interfaces\I_AccessProvider.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_ByteChannel.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_ControlModule.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_DeviceConnector.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_EquipmentModule.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_EventSink.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_FieldbusScanner.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_Module.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_PartCarrier.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_SequenceHost.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_RecipeProvider.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_StationConfig.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_Unit.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Interfaces\I_VerdictProvider.TcIO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Params\PL_Fraktal.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Params\PL_TcpDevReasons.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PermIntlk\FB_PermIntlk.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Platform\F_Now.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Platform\F_TimingUpdate.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_Standard">
+      <DefaultResolution>Tc2_Standard, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Standard</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_System">
+      <DefaultResolution>Tc2_System, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_System</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_Utilities">
+      <DefaultResolution>Tc2_Utilities, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Utilities</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc3_Module">
+      <DefaultResolution>Tc3_Module, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc3_Module</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+</Project>

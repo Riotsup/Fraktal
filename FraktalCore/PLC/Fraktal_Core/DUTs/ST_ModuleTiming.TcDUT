@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ModuleTiming" Id="{93748d74-cbc9-420c-abac-6fff05fa7a2f}">
+    <Declaration><![CDATA[// Core §8.11.4(a) — per-module command timing, maintained by FB_ControlModuleBase.
+// Fixed-size; capture never allocates at runtime (Core §8.11.4(e)).
+TYPE ST_ModuleTiming :
+STRUCT
+    LastCmdTime : TIME;   // duration of the most recently completed command
+    Rows        : ARRAY[1..PL_Fraktal.MAX_CMD_STATS] OF ST_TimingRow;
+    Truncated   : BOOL;   // more distinct command ids than MAX_CMD_STATS
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TwoHandOutImm" Id="{55f0c673-54b9-4e2c-b23c-e0fc92fd7f94}">
+    <Declaration><![CDATA[TYPE ST_TwoHandOutImm :
+STRUCT
+    LeftPressed     : BOOL;
+    RightPressed    : BOOL;
+    SafeActive      : BOOL;
+    Armed           : BOOL;
+    StartPulse      : BOOL;
+    FieldbusHealthy : BOOL;
+    Diagnostic      : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

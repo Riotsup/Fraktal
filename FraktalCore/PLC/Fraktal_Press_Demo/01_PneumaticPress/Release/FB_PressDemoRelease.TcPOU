@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressDemoRelease" Id="{1b9d54d7-94cc-4e60-aef7-8683a87d8604}" SpecialFunc="None">
+    <Declaration><![CDATA[// Project-owned release engineering for the pneumatic press.
+// This FB is not a Fraktal module: it exposes named condition state and fills
+// the Unit's authoritative release reports without adding an OPC UA tree node.
+FUNCTION_BLOCK FB_PressDemoRelease
+VAR_OUTPUT
+    ModeStart : FB_PermIntlk;
+    ModeStartAirPressureOk : BOOL;
+END_VAR
+VAR
+    _unitPath : STRING(255);
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[; // Evaluated explicitly by the owning Unit after child cyclic status is available.]]></ST></Implementation>
+    <Method Name="Setup" Id="{011da35d-4b45-487e-b781-972cfe256167}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    UnitPath : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_unitPath := UnitPath;
+Setup := ModeStart.Define(Index := 1, Description := 'project.condition.airPressureOk',
+    Reason := E_Reason.PERMISSIVE_NOT_MET, Bypassable := FALSE);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Evaluate" Id="{101b92da-9b53-4a85-a1ee-e36daf4ec510}">
+      <Declaration><![CDATA[METHOD M_Evaluate
+VAR_INPUT
+    PressRam : REFERENCE TO FB_CylinderCM;
+    Door : REFERENCE TO FB_CylinderCM;
+    PartSlide : REFERENCE TO FB_CylinderCM;
+    TwoHand : REFERENCE TO FB_TwoHandStartCM;
+    PneumaticPower : REFERENCE TO FB_PowerGroupCM;
+    AirPressure : REFERENCE TO FB_AirPressureMonitorCM;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[// Direction-specific functional collision prevention. Certified safety remains
+// authoritative for hazardous-motion permission and safe output removal.
+Door.SetDirectionalPermits(
+    ExtendOk := PartSlide.OutImm.Extended AND NOT PartSlide.OutImm.Retracted
+        AND NOT PartSlide.Busy AND NOT PartSlide.Error,
+    RetractOk := TRUE,
+    ExtendDescriptionKey := 'project.interlock.doorCloseRequiresSlideInside',
+    RetractDescriptionKey := 'project.interlock.doorOpenPermitted');
+PartSlide.SetDirectionalPermits(
+    ExtendOk := Door.OutImm.Retracted AND NOT Door.OutImm.Extended
+        AND NOT Door.Busy AND NOT Door.Error,
+    RetractOk := Door.OutImm.Retracted AND NOT Door.OutImm.Extended
+        AND NOT Door.Busy AND NOT Door.Error,
+    ExtendDescriptionKey := 'project.interlock.slideMoveRequiresDoorOpen',
+    RetractDescriptionKey := 'project.interlock.slideOutsideRequiresDoorOpen');
+PressRam.SetDirectionalPermits(
+    ExtendOk := Door.OutImm.Extended AND NOT Door.OutImm.Retracted
+        AND PartSlide.OutImm.Extended AND NOT PartSlide.OutImm.Retracted
+        AND NOT Door.Error AND NOT PartSlide.Error
+        AND AirPressure.OutImm.PressureOk AND TwoHand.OutImm.SafeActive
+        AND PneumaticPower.OutCmd.PowerOn,
+    RetractOk := TRUE,
+    ExtendDescriptionKey := 'project.interlock.pressRequiresGuardSlideTwoHandPower',
+    RetractDescriptionKey := 'project.interlock.pressRetractPermitted');
+
+// Mode-entry release is distinct from future AUTO waits. Part presence and the
+// two-hand edge remain live conditions in the AUTO SFC action.
+ModeStartAirPressureOk := AirPressure.OutImm.PressureOk;
+ModeStart.Cond[1] := ModeStartAirPressureOk;
+ModeStart();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_AppendStart" Id="{d7cffec1-d935-497a-b594-20045688ce25}">
+      <Declaration><![CDATA[METHOD M_AppendStart
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ModeStart.AppendFailed(SourcePath := _unitPath, Report := Report);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_AppendManual" Id="{5f2a2afa-909f-4a9e-bcb1-7997342aeeca}">
+      <Declaration><![CDATA[METHOD M_AppendManual
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+    PressRam : REFERENCE TO FB_CylinderCM;
+    Door : REFERENCE TO FB_CylinderCM;
+    PartSlide : REFERENCE TO FB_CylinderCM;
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF TargetPath = PressRam.Name THEN
+    PressRam.AppendDirectionalRelease(Value := Value, Report := Report);
+ELSIF TargetPath = Door.Name THEN
+    Door.AppendDirectionalRelease(Value := Value, Report := Report);
+ELSIF TargetPath = PartSlide.Name THEN
+    PartSlide.AppendDirectionalRelease(Value := Value, Report := Report);
+ELSE
+    IF Report.Count < PL_Fraktal.MAX_RELEASE_REASONS THEN
+        Report.Count := Report.Count + 1;
+        Report.Reasons[Report.Count].Description := 'std.error.unsupportedManualTarget';
+        Report.Reasons[Report.Count].ReasonCode := E_Reason.UNSUPPORTED_COMMAND;
+        Report.Reasons[Report.Count].SourcePath := _unitPath;
+        Report.Reasons[Report.Count].Kind := E_ReleaseKind.OTHER;
+        Report.Reasons[Report.Count].Bypassable := FALSE;
+    ELSE
+        ; // bounded report is full; no array write is attempted
+    END_IF
+END_IF]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

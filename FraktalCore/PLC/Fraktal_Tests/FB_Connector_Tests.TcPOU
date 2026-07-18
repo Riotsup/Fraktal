@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Connector_Tests" Id="{a5bd181d-c990-4e5a-8c1d-64e336b8fa3e}" SpecialFunc="None">
+    <Declaration><![CDATA[// FB_DeviceConnectorBase suite — row T7 (link supervision) proven once (5.7)
+FUNCTION_BLOCK FB_Connector_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _c1, _c2 : FB_ProbeConnector;
+    _w : BOOL;
+    _d : ST_Diagnostic;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Heartbeat_links_and_protocol_fail_drops();
+Silent_link_confirms_LINK_TIMEOUT();]]></ST>
+    </Implementation>
+    <Method Name="Heartbeat_links_and_protocol_fail_drops" Id="{9189601e-2f60-4a00-9b04-4d2ff696cb78}">
+      <Declaration><![CDATA[METHOD Heartbeat_links_and_protocol_fail_drops]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Heartbeat_links_and_protocol_fail_drops');
+IF NOT _w THEN
+    _c1.Setup('Test.Link1');
+    _c1.HbPeriod := T#0S;
+    _c1.LinkTimeout := T#1H;                 // loss confirm never fires in this test
+    _c2.Setup('Test.Link2');
+    _c2.HbPeriod := T#1H;                    // heartbeat never due
+    _c2.LinkTimeout := T#0S;                 // loss confirms immediately
+    _w := TRUE;
+END_IF
+AssertTrue(Condition := _c1.Connect(), Message := 'session opens');
+_c1();                                       // hb due -> start
+_c1();                                       // poll OK -> Linked
+AssertTrue(Condition := _c1.Linked, Message := 'healthy heartbeat links (3.15.2)');
+_c1.SimHb := E_HbResult.FAIL;
+_c1();                                       // hb start
+_c1();                                       // poll FAIL -> protocol error, session dropped
+AssertFalse(Condition := _c1.Linked, Message := 'protocol failure drops the link');
+_d := _c1.LinkReason;
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.DEVICE_PROTOCOL_ERROR),
+                   Actual   := TO_DWORD(_d.ReasonCode),
+                   Message  := 'first-out names the protocol error');
+AssertEquals_STRING(Expected := 'Test.Link1', Actual := _d.SourcePath,
+                    Message := 'link reason names the connector path (6.9)');
+AssertTrue(Condition := _c1.FaultActive, Message := 'connector reports FaultActive for rollup');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Silent_link_confirms_LINK_TIMEOUT" Id="{c9891ad3-a58c-4185-8879-8b86ee1d14be}">
+      <Declaration><![CDATA[METHOD Silent_link_confirms_LINK_TIMEOUT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Silent_link_confirms_LINK_TIMEOUT');
+AssertTrue(Condition := _c2.Connect(), Message := 'session opens');
+_c2();                                       // no beat; loss confirm (T#0S) -> LINK_TIMEOUT
+AssertFalse(Condition := _c2.Linked, Message := 'silent device drops the link');
+_d := _c2.LinkReason;
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.LINK_TIMEOUT),
+                   Actual   := TO_DWORD(_d.ReasonCode),
+                   Message  := 'LINK_TIMEOUT confirmed after LinkTimeout (3.15.2)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

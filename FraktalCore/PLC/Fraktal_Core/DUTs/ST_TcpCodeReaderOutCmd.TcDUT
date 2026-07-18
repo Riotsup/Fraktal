@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TcpCodeReaderOutCmd" Id="{9f998d10-c224-44dc-9493-e09b46694efb}">
+    <Declaration><![CDATA[TYPE ST_TcpCodeReaderOutCmd :
+STRUCT
+    Code    : STRING(255);
+    NoRead  : BOOL;
+    MatchOk : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

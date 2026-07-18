@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Timing_Tests" Id="{f60887d2-2ece-477f-8c65-aad290d6d1da}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.11.4 under test: exact aggregate math, classified profiler publication,
+// and the base class capturing a tagged command's row — proven ONCE for all types.
+FUNCTION_BLOCK FB_Timing_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _row : ST_TimingRow;
+    _pf  : FB_CycleProfiler;
+    _p   : FB_ProbeCM;
+    _wp  : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TimingUpdate_math_is_exact();
+Profiler_publishes_classified_cycle();
+Base_captures_tagged_command_row();]]></ST>
+    </Implementation>
+    <Method Name="TimingUpdate_math_is_exact" Id="{ca38c93e-e526-4023-a143-8cf13e249f1e}">
+      <Declaration><![CDATA[METHOD TimingUpdate_math_is_exact]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('TimingUpdate_math_is_exact');
+F_TimingUpdate(Row := _row, DurMs := 100);
+F_TimingUpdate(Row := _row, DurMs := 200);
+F_TimingUpdate(Row := _row, DurMs := 300);
+AssertEquals_UDINT(Expected := 3, Actual := _row.Count, Message := 'count');
+AssertEquals_TIME(Expected := T#300MS, Actual := _row.Last, Message := 'last');
+AssertEquals_TIME(Expected := T#100MS, Actual := _row.Minimum, Message := 'minimum');
+AssertEquals_TIME(Expected := T#300MS, Actual := _row.Maximum, Message := 'maximum');
+AssertEquals_TIME(Expected := T#200MS, Actual := _row.Avg,  Message := 'running mean 100,200,300 -> 200');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Profiler_publishes_classified_cycle" Id="{6f2028d9-7e03-45b2-ad37-a6da6cd5f54b}">
+      <Declaration><![CDATA[METHOD Profiler_publishes_classified_cycle]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Profiler_publishes_classified_cycle');
+// cycle 1: an upstream wait, then work
+_pf.StepChanged(StepNo := 90,  StepName := 'Await pallet', Class := E_TimeClass.WAIT_UPSTREAM, Expected := T#0S);
+_pf.StepChanged(StepNo := 90,  StepName := 'Await pallet', Class := E_TimeClass.WAIT_UPSTREAM, Expected := T#0S);  // refresh: no new entry
+_pf.StepChanged(StepNo := 100, StepName := 'Separate', Class := E_TimeClass.WORK, Expected := T#2S);
+_pf.StepChanged(StepNo := 200, StepName := 'Clamp', Class := E_TimeClass.WORK, Expected := T#0S);
+_pf.CycleComplete();
+AssertEquals_TIME(Expected := T#2S, Actual := _pf.LastCycle.Steps[2].Expected,
+                  Message  := 'declared guard published for guard-vs-actual (8.11.4c)');
+AssertEquals_INT(Expected := 3, Actual := _pf.LastCycle.NSteps, Message := 'three steps in the waterfall');
+AssertEquals_DINT(Expected := TO_DINT(E_TimeClass.WAIT_UPSTREAM),
+                  Actual   := TO_DINT(_pf.LastCycle.Steps[1].Class),
+                  Message  := 'wait step carries its declared class (8.11.4f)');
+AssertEquals_DINT(Expected := TO_DINT(E_TimeClass.WORK),
+                  Actual   := TO_DINT(_pf.LastCycle.Steps[2].Class),
+                  Message  := 'undeclared step defaults to WORK');
+AssertEquals_TIME(Expected := _pf.LastCycle.Total,
+                  Actual   := _pf.LastCycle.WorkTime + _pf.LastCycle.WaitTime,
+                  Message  := 'Total = WorkTime (real cycle time) + WaitTime');
+AssertEquals_UDINT(Expected := 1, Actual := _pf.LastCycle.CycleNo, Message := 'cycle counter');
+// cycle 2 — aggregates accumulate per StepNo and keep the class
+_pf.StepChanged(StepNo := 90,  StepName := 'Await pallet', Class := E_TimeClass.WAIT_UPSTREAM, Expected := T#0S);
+_pf.StepChanged(StepNo := 100, StepName := 'Separate', Class := E_TimeClass.WORK, Expected := T#0S);
+_pf.StepChanged(StepNo := 200, StepName := 'Clamp', Class := E_TimeClass.WORK, Expected := T#0S);
+_pf.CycleComplete();
+AssertEquals_UDINT(Expected := 2, Actual := _pf.LastCycle.CycleNo, Message := 'second cycle published');
+// §8.11.1/§8.11.4 — throughput markers + trend ring follow completed cycles
+AssertEquals_TIME(Expected := _pf.LastCycle.Total, Actual := _pf.LastCycleTime,
+                  Message := 'LastCycleTime tracks the completed cycle (8.11.1)');
+AssertTrue(Condition := (_pf.MinCycleTime > T#0S) AND (_pf.MinCycleTime <= _pf.LastCycleTime),
+           Message := 'MinCycleTime is the rolling best (8.11.1)');
+AssertEquals_INT(Expected := 2, Actual := _pf.HistoryHead, Message := 'trend ring advanced per cycle');
+AssertEquals_UDINT(Expected := 2, Actual := _pf.History[2].CycleNo, Message := 'ring carries the cycle number');
+AssertEquals_TIME(Expected := _pf.History[2].WorkTime + _pf.History[2].WaitTime,
+                  Actual   := _pf.History[2].Total,
+                  Message  := 'ring split reconciles (8.11.4f)');
+AssertEquals_UDINT(Expected := 2, Actual := _pf.StepStats[1].Count, Message := 'per-step aggregate counts cycles');
+AssertEquals_DINT(Expected := 90, Actual := _pf.StepStats[1].Id, Message := 'aggregate keyed by StepNo');
+AssertEquals_DINT(Expected := TO_DINT(E_TimeClass.WAIT_UPSTREAM),
+                  Actual   := TO_DINT(_pf.StepStats[1].Class),
+                  Message  := 'aggregate row keeps the time class');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Base_captures_tagged_command_row" Id="{9ba46a68-2c03-4e26-98ee-840f84045aa2}">
+      <Declaration><![CDATA[METHOD Base_captures_tagged_command_row]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Base_captures_tagged_command_row');
+IF NOT _wp THEN
+    _p.Setup('Test.TimingProbe');
+    _wp := TRUE;
+END_IF
+_p.Execute := TRUE;
+_p();
+_p.SimDone := TRUE;
+_p();                                    // BUSY -> DONE: the base closes the timing row
+AssertTrue(Condition := _p.Done, Message := 'probe completed');
+AssertEquals_UDINT(Expected := 1, Actual := _p.Timing.Rows[1].Count,
+                   Message := 'one completed command recorded (Core 8.11.4a)');
+AssertEquals_DINT(Expected := 1, Actual := _p.Timing.Rows[1].Id, Message := 'row keyed by tagged id');
+AssertEquals_STRING(Expected := 'PROBE', Actual := _p.Timing.Rows[1].Label,
+                    Message := 'row carries the tagged label for the HMI table');
+_p.Execute := FALSE;
+_p.SimDone := FALSE;
+_p();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

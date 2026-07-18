@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_PowerGroupHal" Id="{7a12ce39-4389-49fb-b5b9-814bac6c5071}">
+    <Declaration><![CDATA[TYPE ST_PowerGroupHal :
+STRUCT
+    EnableRequestOut : BOOL; // untrusted functional request; safety system remains authoritative
+    PowerFeedback    : BOOL;
+    SafetyPermit     : BOOL; // read-only alias from certified safety application
+    FieldbusHealthy  : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

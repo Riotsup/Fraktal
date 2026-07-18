@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ChannelKind" Id="{f27e1d21-e157-480d-aff0-9e3bf94a3a98}">
+    <Declaration><![CDATA[// Core §10.5.1
+{attribute 'qualified_only'}
+TYPE E_ChannelKind : (DIGITAL := 0, ANALOG := 1) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

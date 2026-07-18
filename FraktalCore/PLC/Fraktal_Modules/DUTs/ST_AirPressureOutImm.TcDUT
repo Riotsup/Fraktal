@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_AirPressureOutImm" Id="{6265995d-2ec1-4174-8b00-50b4ebff4631}">
+    <Declaration><![CDATA[TYPE ST_AirPressureOutImm :
+STRUCT
+    LowPressure : BOOL;
+    OperatingPressure : BOOL;
+    PressureOk : BOOL;
+    Contradictory : BOOL;
+    Quality : BOOL;
+    LowSensorTag : STRING(80);
+    OperatingSensorTag : STRING(80);
+    Diagnostic : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

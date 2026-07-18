@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ModeSwitchShield" Id="{f8ffe3bb-c1fe-4a49-964a-bcc7d0723444}">
+    <Declaration><![CDATA[// Core §3.4.1 — may the operator leave THIS mode while its sequence runs?
+{attribute 'qualified_only'}
+TYPE E_ModeSwitchShield : (INTERRUPTIBLE := 0, CONFIRM := 1, BLOCKED_WHILE_RUNNING := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

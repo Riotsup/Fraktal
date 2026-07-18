@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_CondRecord" Id="{4ba68801-ca97-4872-9555-2ff4a8f36dce}">
+    <Declaration><![CDATA[// Core §6.9(b) — named plain-condition wait
+TYPE ST_CondRecord :
+STRUCT
+    Label : STRING(120);   // localization key
+    Ok    : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

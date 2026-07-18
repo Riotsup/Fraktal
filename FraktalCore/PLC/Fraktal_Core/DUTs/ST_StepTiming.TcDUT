@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_StepTiming" Id="{42826063-4af4-46fe-b458-aeeb8dfa7401}">
+    <Declaration><![CDATA[// Core §8.11.4(b)/(f) — one step of a cycle profile (Gantt/waterfall row)
+TYPE ST_StepTiming :
+STRUCT
+    StepNo   : INT;
+    StepName : STRING(120);   // localization key
+    Class    : E_TimeClass;  // WORK unless the step declared a wait class (§8.11.4(f))
+    Started  : DT;           // synchronized wall clock (Core §2.7) — aligns across stations
+    Duration : TIME;         // monotonic-clock duration (TC3 §8.11)
+    Expected : TIME;         // §8.11.4(c) — the step's declared guard, drawn vs actual (0 = none)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,1402 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_UnitBase" Id="{116d9026-fbad-4cf8-8b52-50d17613c706}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §2.2 lifecycle family, top tier: modes + cascade (§3.4/§3.7), Start/Stop
+// mapped onto the §6.1 run command (§6 intro), the step chain (_M_SetStep/_M_Await,
+// §6.5/§6.9(b)), the stall walk as a PENDING reason with instant rollup on an
+// awaited module's Error (§6.9/§8.2), the §8.11.4 profiler wired in, and
+// Starved/Blocked derived from the step's time class (§8.11.4(f)/§8.11.3).
+// A Unit type overrides _M_Dispatch (its mode chain) + _M_Supports (+ §3.14 hooks).
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK ABSTRACT FB_UnitBase EXTENDS FB_CompositeModuleBase IMPLEMENTS I_Unit, I_SequenceHost
+VAR_INPUT
+    DecisionAnswer : INT;              // §6.11: chosen option index (0 = none yet)
+    ReqControlOn   : BOOL;             // §9.8 HMI/data request; edge-consumed and access-gated
+    ReqControlOff  : BOOL;
+    HmiRequest     : ST_HmiRequest;     // §3.10/§14: arguments first, Sequence last
+    {attribute 'OPC.UA.DA' := '0'}
+    ControlDomain  : ST_ControlDomainStatus; // §9.8: optional shared cell/cage arrangement
+END_VAR
+VAR_OUTPUT
+    Starved : BOOL;                    // §8.11.3 — derived from CurrentStep.Class
+    Blocked : BOOL;
+    Domain  : ST_ControlDomainStatus;  // §9.8 read-only publication of the assigned domain
+    ControlOnRequest  : BOOL;          // one-scan request to the owning domain coordinator
+    ControlOffRequest : BOOL;
+END_VAR
+VAR_OUTPUT
+    Profiler    : FB_CycleProfiler;    // §8.11.4 — HMI chart source
+    CurrentStep : ST_StepRecord;       // §6.5 — feeds §6.9 walk AND the profiler
+    Pending     : ST_Diagnostic;       // live stall reason (Low) — NOT a fault (§6.9)
+    Decision    : ST_DecisionRequest;  // §6.11 active request ('' Prompt = none)
+    StallTime   : TIME := T#30S;       // guard when the step declares no ExpectedTime
+    Model       : ST_ModelId;          // §3.1b active model identity (published for HMI/MES/trace)
+    AvailableModelCount : INT;         // §3.8 optional discoverable model/recipe catalog
+    AvailableModels : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF ST_ModelId;
+    Part        : ST_PartContext;      // §3.16.1 live part context (Present=FALSE, Uid='' = none)
+    AlarmLog    : FB_AlarmLog;         // §8.3 — active list + closed ring + Blocking
+    Access      : FB_AccessManager;    // §7.7 — per-root session/policy (default: fully open)
+    GoodCount   : UDINT;               // §8.11.2 — cycle verdict counters
+    NokCount    : UDINT;
+    ReworkCount : UDINT;
+    NokReason   : E_Reason;            // §8.11.2 — last NOK's first-out attribution
+    MachineState : E_MachineState;     // §8.11.3 — classified every scan (OEE/PackML/host)
+    History     : ARRAY[1..PL_Fraktal.MAX_DIAG_RING] OF ST_Diagnostic;  // §6.9(a) ring (newest at HistoryHead)
+    HistoryHead : INT;
+    ModePolicy  : ARRAY[0..PL_Fraktal.MODE_COUNT-1] OF ST_ModePolicy;    // §3.4.1 per-mode switch policy (station cfg)
+    RunStyle    : E_RunStyle;          // §3.4.2 active run style (HMI-selectable; CONTINUOUS default)
+    Oee         : ST_Oee;              // §8.5.1 accumulators + snapshot (published)
+    OeeTrend    : ARRAY[1..PL_Fraktal.MAX_OEE_SAMPLES] OF ST_OeeSample; // §8.5.1 ring
+    OeeTrendHead: INT;                 // newest sample index (0 = none yet)
+    HmiResponse : ST_HmiResponse;
+    ModeActivePublished : E_Mode;       // properties are not OPC UA-visible
+    RunningPublished : BOOL;
+    StopPendingPublished : BOOL;
+    SupportedModesPublished : ARRAY[0..PL_Fraktal.MODE_COUNT-1] OF BOOL;
+    SupportedRunStylesPublished : ARRAY[0..2] OF BOOL;
+END_VAR
+VAR
+    _fTrig    : R_TRIG;
+    _mode     : E_Mode;
+    _modeReq  : E_Mode;
+    _modePend : BOOL;
+    _stopReq  : BOOL;
+    _awaits   : I_Module;              // module the current step awaits (0 = none)
+    _faultEvt : INT;                   // open ERROR event slot in AlarmLog (0 = none)
+    _tStall   : TON;
+    _stepReq  : BOOL;                  // §3.4.2 pending single-step request (edge-consumed)
+    _holdRun  : BOOL;                  // §3.4.2 HOLD_TO_RUN input held (NON-SAFETY, §9)
+    _stepArm  : R_TRIG;
+    _oeeLast  : TIME;                  // §8.5.1 last accumulation stamp
+    _oeeSampMs: UDINT;                 // ms since last trend sample
+    _hmiLastSequence : UDINT;
+    _carrier  : I_PartCarrier;         // §3.16.2 injected part carrier (0 = traceability off)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="OnCyclic" Id="{833bee58-3464-412f-8fa3-37fa398fef55}">
+      <Declaration><![CDATA[// base first (§3.14.2); then children, one-shot init, mode transition, stall watch
+METHOD PROTECTED OnCyclic : DINT
+VAR
+    publishIdx : INT;
+    modeIdx    : E_Mode;
+    styleIdx   : E_RunStyle;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+_M_TickChildren();
+_M_OeeUpdate();                                       // §8.5.1 time accounting + sampling
+AlarmLog.Cyclic();                                    // §8.10 shelf auto-expiry
+_M_HandleHmiRequest();                                // §3.10 request mailbox
+Access.Cyclic();
+// §9.8 data-driven Control On/Off request endpoint. Off wins if both arrive;
+// the domain/power-group implementation still validates safety, health and rearm.
+ControlOnRequest := FALSE;
+ControlOffRequest := FALSE;
+IF ReqControlOff THEN
+    ReqControlOff := FALSE;
+    ReqControlOn := FALSE;
+    IF Access.PermitsLogged(Gate := E_GatedAction.POWER_CONTROL) THEN
+        ControlOffRequest := TRUE;
+    END_IF
+ELSIF ReqControlOn THEN
+    ReqControlOn := FALSE;
+    IF Access.PermitsLogged(Gate := E_GatedAction.POWER_CONTROL) THEN
+        ControlOnRequest := TRUE;
+    END_IF
+END_IF
+// §3.14.4 — pending mode change; §3.4.1 style decides graceful vs immediate
+IF _modePend THEN
+    IF _exec = E_ExecState.BUSY THEN
+        IF ModePolicy[TO_INT(_mode)].Style = E_ModeSwitchStyle.GRACEFUL THEN
+            _stopReq := TRUE;                             // finish the cycle at its stop point
+        ELSIF OnModeExit() = 0 THEN
+            OnAbort();                                    // IMMEDIATE: cancel now (override may defer)
+        END_IF
+    ELSE
+        IF _exec <> E_ExecState.READY THEN
+            Execute := FALSE;                             // release the run command (§6.1 reset)
+        ELSE
+            _mode := _modeReq;
+            _modePend := FALSE;
+            _M_CascadeMode(_mode);                        // §3.7 cascade [TC3]
+            OnModeChanged();
+        END_IF
+    END_IF
+END_IF
+// §8.3(c) — automatic fault capture: ERROR entry raises, ERROR exit marks gone
+IF (_exec = E_ExecState.ERROR) AND (_faultEvt = 0) THEN
+    _faultEvt := AlarmLog.RaiseDiag(D := _diag, ResetClass := E_ResetClass.MANUAL_RESET);
+    _M_PartAborted();                  // §3.16.3: a faulted part leaves without a valid result
+ELSIF (_exec <> E_ExecState.ERROR) AND (_faultEvt > 0) THEN
+    AlarmLog.Gone(Slot := _faultEvt);                            // -> WAIT_RESET (blocking)
+    _faultEvt := 0;
+END_IF
+// §6.9 — instant rollup on awaited Error; stall as PENDING otherwise
+IF _exec = E_ExecState.BUSY THEN
+    IF (_awaits <> 0) AND_THEN _awaits.FaultActive THEN
+        _M_FaultDiag(_awaits.GetFaultSummary());
+    ELSE
+        _tStall(IN := TRUE, PT := SEL(CurrentStep.ExpectedTime > T#0S, StallTime, CurrentStep.ExpectedTime));
+        IF _tStall.Q THEN
+            _M_StallWalk();
+        END_IF
+    END_IF
+ELSE
+    _tStall(IN := FALSE);
+END_IF
+// §6.9(a) — every new fault joins the shift-change ring, no historian needed
+_fTrig(CLK := (_exec = E_ExecState.ERROR));
+IF _fTrig.Q THEN
+    _M_PushHistory(_diag);
+END_IF
+// §8.11.4(d) — creeping WORK time is a MAINTENANCE event (Low), not downtime:
+// the profiler pulses once per excursion past the configured baseline band.
+IF Profiler.DegradedTrig THEN
+    _M_RaiseMaintenance(Reason := E_Reason.CYCLE_TIME_DEGRADED,
+        Text := 'std.maintenance.cycleTimeDegraded');
+END_IF
+ModeActivePublished := _mode;
+RunningPublished := (_exec = E_ExecState.BUSY);
+StopPendingPublished := _stopReq AND (_exec = E_ExecState.BUSY);
+FOR publishIdx := 0 TO PL_Fraktal.MODE_COUNT - 1 DO
+    modeIdx := publishIdx;
+    SupportedModesPublished[publishIdx] := _M_Supports(Mode := modeIdx);
+END_FOR
+FOR publishIdx := 0 TO 2 DO
+    styleIdx := publishIdx;
+    SupportedRunStylesPublished[publishIdx] := _M_SupportsRunStyle(Style := styleIdx);
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnInit" Id="{c11afaa2-3957-4d40-8695-293ff272dfc1}">
+      <Declaration><![CDATA[// §3.14 hook — one-shot after first operational scan
+METHOD PROTECTED OnInit : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnInit := SUPER^.OnInit();
+Access.Setup(Provider := 0, pAlarmLog := ADR(AlarmLog)); // preserves an injected provider
+_M_InitModePolicy();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{02d44270-09e8-4bc1-97fd-f43dd3fc44f2}">
+      <Declaration><![CDATA[// §6.9/§3.10(a') — overlay the pending stall after the common mirror refresh.
+METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+// §8.11.4(f)/§8.11.3 — one declaration, two views. Derived AFTER dispatch so the
+// wait class reflects the step record this scan just set, not the previous one.
+Starved := (_exec = E_ExecState.BUSY) AND (CurrentStep.Class = E_TimeClass.WAIT_UPSTREAM);
+Blocked := (_exec = E_ExecState.BUSY) AND (CurrentStep.Class = E_TimeClass.WAIT_DOWNSTREAM);
+// §8.11.3 — classify into the fixed machine-state set (priority: fault first,
+// then planned states, then line attribution, then producing/idle).
+IF (_exec = E_ExecState.ERROR) OR AlarmLog.Blocking THEN
+    MachineState := E_MachineState.DOWN;
+ELSIF _mode = E_Mode.CHANGEOVER THEN
+    MachineState := E_MachineState.CHANGEOVER;
+ELSIF Blocked THEN
+    MachineState := E_MachineState.BLOCKED;
+ELSIF Starved THEN
+    MachineState := E_MachineState.STARVED;
+ELSIF _exec = E_ExecState.BUSY THEN
+    MachineState := E_MachineState.PRODUCING;
+ELSIF _stopReq OR (_exec = E_ExecState.ABORTED) THEN
+    MachineState := E_MachineState.STOPPED;
+ELSE
+    MachineState := E_MachineState.IDLE;
+END_IF
+Status.ControlDomainId := ControlDomain.Id;
+Domain := ControlDomain;
+Safety := ControlDomain.Safety;             // read-only HMI mirror; ownership stays in domain
+ControlPower := ControlDomain.ControlPower;
+IF (_exec <> E_ExecState.ERROR) AND (Pending.ReasonCode <> E_Reason.NONE) THEN
+    Status.Diagnostic := Pending;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_RaiseMaintenance" Id="{c92e4b71-6d05-4f88-9e3a-2b17d4c8a054}">
+      <Declaration><![CDATA[// §8.11.4(d)/§8.12 — a Low-severity maintenance event: informs planning, does not
+// stop the cycle. Instant come+gone ring entry (the trend data lives in Profiler).
+METHOD PROTECTED _M_RaiseMaintenance
+VAR_INPUT
+    Reason : E_Reason;
+    Text : STRING(255);
+END_VAR
+VAR
+    slot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[slot := AlarmLog.Raise(Reason := Reason, Text := Text, Source := _name,
+    Severity := E_Severity.LOW, Category := E_Category.SYSTEM,
+    ResetClass := E_ResetClass.AUTO_RESET);
+IF slot > 0 THEN
+    AlarmLog.Gone(Slot := slot);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceSetStep" Id="{cd33b52b-b93d-4827-921b-0507be840f66}">
+      <Declaration><![CDATA[// I_SequenceHost (§6.7/§6.8) — step record for a separately-compiled chain.
+METHOD M_SequenceSetStep
+VAR_INPUT
+    StepNo : INT;
+    StepName : STRING(120);
+    Awaits : I_Module;
+    AwaitingLabel : STRING(120);
+    Class : E_TimeClass;
+    ExpectedTime : TIME;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetStep(StepNo := StepNo, StepName := StepName,
+    Awaits := Awaits, AwaitingLabel := AwaitingLabel, Class := Class,
+    ExpectedTime := ExpectedTime);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceAwait" Id="{c61669f7-ff2f-475c-915e-c23e673ae50d}">
+      <Declaration><![CDATA[METHOD M_SequenceAwait : BOOL
+VAR_INPUT
+    Idx : INT;
+    Label : STRING(120);
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequenceAwait := _M_Await(Idx := Idx, Label := Label, Ok := Ok);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceStepGate" Id="{4300b99e-dada-4558-9a7d-f357bb3b59db}">
+      <Declaration><![CDATA[METHOD M_SequenceStepGate : BOOL
+VAR_INPUT
+    Steppable : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequenceStepGate := _M_StepGate(Steppable := Steppable);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequencePartReceived" Id="{9576ad5e-fef2-4d71-bd9f-075e2fbf7f48}">
+      <Declaration><![CDATA[METHOD M_SequencePartReceived : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequencePartReceived := _M_PartReceived();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequencePartStarted" Id="{c34399dc-9677-414b-87a7-da41fec81ce1}">
+      <Declaration><![CDATA[METHOD M_SequencePartStarted]]></Declaration>
+      <Implementation><ST><![CDATA[_M_PartStarted();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequencePartRecord" Id="{272bc8d6-51f1-4e02-a0f6-834fc34cf443}">
+      <Declaration><![CDATA[METHOD M_SequencePartRecord : BOOL
+VAR_INPUT
+    RecordName : STRING(64);
+    Value : LREAL;
+    Minimum : LREAL;
+    Maximum : LREAL;
+    Target : LREAL;
+    EngUnit : STRING(16);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequencePartRecord := _M_PartRecord(RecordName := RecordName,
+    Value := Value, Minimum := Minimum, Maximum := Maximum, Target := Target,
+    EngUnit := EngUnit);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequencePartProcessed" Id="{f3fe635f-f0ef-4b80-918f-2af11c08a018}">
+      <Declaration><![CDATA[METHOD M_SequencePartProcessed : BOOL
+VAR_INPUT
+    Verdict : E_Verdict;
+    Reason : E_Reason;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequencePartProcessed :=
+    _M_PartProcessed(Verdict := Verdict, Reason := Reason);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceCountGood" Id="{7ac5d064-bbc3-4e23-a999-5b1106c18501}">
+      <Declaration><![CDATA[METHOD M_SequenceCountGood]]></Declaration>
+      <Implementation><ST><![CDATA[CountGood();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceAskDecision" Id="{099b4f9d-bc09-44d1-a376-b2e504dbb242}">
+      <Declaration><![CDATA[METHOD M_SequenceAskDecision
+VAR_INPUT
+    Req : ST_DecisionRequest;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_AskDecision(Req := Req);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceTakeDecision" Id="{a0cad3a5-90f7-4b63-9dfc-d75845d8e702}">
+      <Declaration><![CDATA[METHOD M_SequenceTakeDecision : INT]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequenceTakeDecision := _M_TakeDecision();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceClearDecision" Id="{f5e88d63-dd7e-45c7-8fcc-149437ebcb66}">
+      <Declaration><![CDATA[METHOD M_SequenceClearDecision]]></Declaration>
+      <Implementation><ST><![CDATA[Decision.Prompt := '';
+DecisionAnswer := 0;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceComplete" Id="{94f85c2c-bf7e-4679-9ad7-df299f9443e9}">
+      <Declaration><![CDATA[METHOD M_SequenceComplete]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Complete();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceEndOfCycle" Id="{2465831e-ce6a-49ba-894a-d94a6e5b730d}">
+      <Declaration><![CDATA[METHOD M_SequenceEndOfCycle : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequenceEndOfCycle := _M_EndOfCycle();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceFault" Id="{6dcf30ea-273a-4919-b53c-93ee346a0722}">
+      <Declaration><![CDATA[METHOD M_SequenceFault
+VAR_INPUT
+    Reason : E_Reason;
+    DescriptionKey : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Fault(Reason, DescriptionKey);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceStopPending" Id="{9b04e7c1-52d8-4f36-8a92-1c65fd83a247}">
+      <Declaration><![CDATA[// §3.4 — a chain polls this at its between-cycles wait step.
+METHOD M_SequenceStopPending : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[M_SequenceStopPending := _stopReq AND (_exec = E_ExecState.BUSY);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_SequenceStopNow" Id="{5e2a91d7-38c4-4b0f-a6e8-74d19c2b50f3}">
+      <Declaration><![CDATA[// §3.4/§8.11 — accept a pending Stop BETWEEN cycles: the open profile fragment
+// (just the wait step) is abandoned, not published as a production cycle.
+METHOD M_SequenceStopNow]]></Declaration>
+      <Implementation><ST><![CDATA[Profiler.CycleAbandon();
+_stopReq := FALSE;
+Execute := FALSE;
+_M_Complete();]]></ST></Implementation>
+    </Method>
+    <Method Name="SetPartCarrier" Id="{6a3e9c15-2f84-4b0d-9c17-d84f5e21ab63}">
+      <Declaration><![CDATA[// §3.16.2 — inject the part carrier at the composition root (0 = traceability off).
+// Source-agnostic: BY_POSITION local, RFID, DataMatrix, or host, behind I_PartCarrier.
+METHOD SetPartCarrier : BOOL
+VAR_INPUT
+    Carrier : I_PartCarrier;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_carrier := Carrier;
+SetPartCarrier := (Carrier <> 0);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PartEvent" Id="{f18c2d47-9b53-4e6a-8c02-3a71d5f0b429}">
+      <Declaration><![CDATA[// §3.16.3 — one canonical part-lifecycle event: instant come+gone MESSAGE ring entry.
+METHOD PRIVATE _M_PartEvent
+VAR_INPUT
+    Reason : E_Reason;
+    Text : STRING(255);
+END_VAR
+VAR
+    slot : INT;
+    txt : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[txt := CONCAT(Text, Part.Uid);
+slot := AlarmLog.Raise(Reason := Reason, Text := txt, Source := _name,
+    Severity := E_Severity.LOW, Category := E_Category.PROCESS,
+    ResetClass := E_ResetClass.AUTO_RESET);
+IF slot > 0 THEN
+    AlarmLog.Gone(Slot := slot);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PartReceived" Id="{58c0a7d9-14be-4f22-8d6a-9b2ef4c1e370}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_RECEIVED — confirm identity at station entry via the carrier.
+// FALSE with a CARRIER_READ_FAILED fault on a failed read (never silent), FALSE
+// silently when no carrier is configured (§3.9 feature selectability).
+METHOD PROTECTED _M_PartReceived : BOOL
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_PartReceived := FALSE;
+IF _carrier = 0 THEN
+    RETURN;
+END_IF
+Part.Uid := '';                              // station entry = fresh identity read
+IF NOT _carrier.ReadContext(Ctx := Part) THEN
+    _M_Fault(E_Reason.CARRIER_READ_FAILED, 'std.error.partCarrierReadFailed');
+    RETURN;
+END_IF
+Part.Result.Verdict := E_Verdict.NONE;       // this station's outcome starts empty
+Part.Result.ReasonCode := E_Reason.NONE;
+Part.Result.StationPath := _name;
+FOR i := 1 TO PL_Fraktal.MAX_RESULTS DO
+    Part.Result.Records[i].Name := '';
+END_FOR
+_M_PartEvent(Reason := E_Reason.EVENT_PART_RECEIVED, Text := 'std.event.partReceived: ');
+_M_PartReceived := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PartStarted" Id="{02a97d1c-6bb5-4f80-9d34-c58b12f04ae6}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_PROCESSING_STARTED — the value-adding sequence begins.
+METHOD PROTECTED _M_PartStarted]]></Declaration>
+      <Implementation><ST><![CDATA[IF (_carrier = 0) OR NOT Part.Present THEN
+    RETURN;
+END_IF
+_M_PartEvent(Reason := E_Reason.EVENT_PART_PROCESSING_STARTED,
+    Text := 'std.event.partProcessingStarted: ');]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PartRecord" Id="{7be4f6a3-1d20-4c8e-be55-f2a09318d67c}">
+      <Declaration><![CDATA[// §3.16.1 — append one measured value to this part's result (test cells).
+// FALSE when the bounded record table is full (RESULT_RECORD_REJECTED semantics).
+METHOD PROTECTED _M_PartRecord : BOOL
+VAR_INPUT
+    RecordName : STRING(64);
+    Value : LREAL;
+    Minimum : LREAL;
+    Maximum : LREAL;
+    Target : LREAL;
+    EngUnit : STRING(16);
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_PartRecord := FALSE;
+IF NOT Part.Present THEN
+    RETURN;
+END_IF
+FOR i := 1 TO PL_Fraktal.MAX_RESULTS DO
+    IF Part.Result.Records[i].Name = '' THEN
+        Part.Result.Records[i].Name := RecordName;
+        Part.Result.Records[i].Value := Value;
+        Part.Result.Records[i].Minimum := Minimum;
+        Part.Result.Records[i].Maximum := Maximum;
+        Part.Result.Records[i].Target := Target;
+        Part.Result.Records[i].Unit := EngUnit;
+        Part.Result.Records[i].InTol := (Maximum <= Minimum)
+            OR ((Value >= Minimum) AND (Value <= Maximum));
+        _M_PartRecord := TRUE;
+        RETURN;
+    END_IF
+END_FOR]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PartProcessed" Id="{e91b5a02-73df-4f16-a8d4-1c30fe8a97d2}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_PROCESSED — stamp the verdict, write the carrier FIRST
+// (result-before-event contract), then raise the event. The Uid and result stay
+// published until the next part so the HMI shows the last outcome.
+METHOD PROTECTED _M_PartProcessed : BOOL
+VAR_INPUT
+    Verdict : E_Verdict;
+    Reason : E_Reason;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_PartProcessed := FALSE;
+IF (_carrier = 0) OR NOT Part.Present THEN
+    RETURN;
+END_IF
+Part.Result.Verdict := Verdict;
+Part.Result.ReasonCode := Reason;
+Part.Result.StationPath := _name;
+Part.Result.Stamp := F_Now();
+IF NOT _carrier.WriteResult(Ctx := Part) THEN
+    _M_Fault(E_Reason.CARRIER_WRITE_FAILED, 'std.error.partCarrierWriteFailed');
+    RETURN;
+END_IF
+// §8.11.2 — counters increment HERE, from the verdict; an NOK carries its
+// first-out ReasonCode so scrap is analysable by cause (§8.8 vocabulary).
+CASE Verdict OF
+    E_Verdict.OK:     CountGood();
+    E_Verdict.NOK:    CountNok();    NokReason := Reason;
+    E_Verdict.REWORK: CountRework();
+ELSE
+    ;                                // NONE: no count — the part left unjudged
+END_CASE
+_M_PartEvent(Reason := E_Reason.EVENT_PART_PROCESSED, Text := 'std.event.partProcessed: ');
+Part.Present := FALSE;
+_M_PartProcessed := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PartAborted" Id="{a55c31e8-06f9-4d10-8c26-4e83b7d5c1f2}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_PROCESSING_ABORTED — the part leaves without a valid result
+// (fault, abort, manual removal). Called automatically on Unit ERROR entry.
+METHOD PROTECTED _M_PartAborted]]></Declaration>
+      <Implementation><ST><![CDATA[IF (_carrier = 0) OR NOT Part.Present THEN
+    RETURN;
+END_IF
+Part.Result.Verdict := E_Verdict.NONE;
+_M_PartEvent(Reason := E_Reason.EVENT_PART_PROCESSING_ABORTED,
+    Text := 'std.event.partAborted: ');
+Part.Present := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnModeChanged" Id="{4307796c-f352-4515-b104-1671ef41b10c}">
+      <Declaration><![CDATA[// §3.14 hook — after the new mode is committed
+METHOD PROTECTED OnModeChanged : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnModeChanged := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnModeExit" Id="{d824838b-6d6c-4575-ade3-00f3815d6c9e}">
+      <Declaration><![CDATA[// §3.14.4 — called every scan while a mode request is pending and the Unit is BUSY.
+// Return 0 = consent to immediate cancel (default); >0 = still stopping gracefully.
+METHOD PROTECTED OnModeExit : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnModeExit := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetMode" Id="{7da8ba28-e926-421f-9272-a6c57a552866}">
+      <Declaration><![CDATA[// §3.4/§3.7 — FALSE = unsupported (graceful rejection); TRUE = committed or pending
+METHOD SetMode : BOOL
+VAR_INPUT
+    Mode : E_Mode;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.MODE_CHANGE) THEN
+    SetMode := FALSE;                  // §7.7(c): who-gate ANDs the machine gates
+    RETURN;
+END_IF
+IF NOT _M_Supports(Mode) THEN
+    SetMode := FALSE;
+    RETURN;
+END_IF
+IF (Mode = _mode) AND NOT _modePend THEN
+    SetMode := TRUE;
+    RETURN;
+END_IF
+// §3.4.1 shield: policy of the mode being LEFT governs while its sequence runs
+IF (_exec = E_ExecState.BUSY)
+AND (ModePolicy[TO_INT(_mode)].Shield = E_ModeSwitchShield.BLOCKED_WHILE_RUNNING) THEN
+    SetMode := FALSE;                  // must Stop first (graceful rejection, not a fault)
+    RETURN;
+END_IF
+_modeReq := Mode;
+_modePend := TRUE;
+SetMode := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Start" Id="{cf23e563-6a38-441b-bf71-cf054a5930b3}">
+      <Declaration><![CDATA[// §3.3/§6 intro — the run IS a §6.1 command.
+// §7.8: ReleaseReportStart is the authoritative machine gate as well as the
+// operator explanation, so a concrete Unit cannot report an interlock it ignores.
+// Build directly into the published response storage: ST_ReleaseReport is too
+// large for nested by-value/local copies on a small TwinCAT task stack.
+METHOD Start : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.START_STOP) THEN
+    Start := FALSE;                    // §7.7
+    RETURN;
+END_IF
+IF ReleaseReportStart(Report := HmiResponse.Report) THEN
+    _stopReq := FALSE;                 // §8.3(b): a MANUAL_RESET event blocks restart
+    Execute := TRUE;
+    Start := TRUE;
+ELSE
+    Start := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Stop" Id="{a7c9b0f8-857c-458d-afc6-9746ac288208}">
+      <Declaration><![CDATA[// §3.3 — stop after the current cycle
+METHOD Stop : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.START_STOP) THEN
+    Stop := FALSE;                     // §7.7
+    RETURN;
+END_IF
+IF _exec = E_ExecState.BUSY THEN
+    _stopReq := TRUE;
+ELSE
+    _stopReq := FALSE;
+    Execute := FALSE;                  // release a terminal run command (ERROR/DONE/ABORTED)
+END_IF
+Stop := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_AskDecision" Id="{4e23ce8a-174c-4663-9cbe-be702ba37032}">
+      <Declaration><![CDATA[// §6.11 — publish a typed decision request (single active slot)
+METHOD PROTECTED _M_AskDecision
+VAR_INPUT
+    Req : ST_DecisionRequest;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Decision := Req;
+Decision.SourcePath := _name;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Await" Id="{098638cb-fc78-4032-9954-0ceffe6b565c}">
+      <Declaration><![CDATA[// §6.9(b) — named plain-condition wait; returns the condition so steps read naturally
+METHOD PROTECTED _M_Await : BOOL
+VAR_INPUT
+    Idx   : INT;
+    Label : STRING(120);
+    Ok    : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (Idx >= 1) AND (Idx <= PL_Fraktal.MAX_STEP_CONDS) THEN
+    CurrentStep.Conds[Idx].Label := Label;
+    CurrentStep.Conds[Idx].Ok    := Ok;
+END_IF
+_M_Await := Ok;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CascadeMode" Id="{3ac20481-72c5-4cd1-88e5-b9f7eb433162}">
+      <Declaration><![CDATA[// §3.7 — offer the mode to child Units; a child may reject (graceful)
+METHOD PROTECTED _M_CascadeMode
+VAR_INPUT
+    Mode : E_Mode;
+END_VAR
+VAR
+    i  : INT;
+    iu : I_Unit;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i := 1 TO _nChild DO
+    IF _children[i] <> 0 THEN
+        IF __QUERYINTERFACE(_children[i], iu) THEN   // [TC3] capability query — TC3 §3.2
+            iu.SetMode(Mode);
+        END_IF
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ClearPending" Id="{cb01b1f4-f591-43f7-a826-970be7300b04}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_ClearPending]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Pending.ReasonCode  := E_Reason.NONE;
+Pending.Description := '';]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_EndOfCycle" Id="{9824e487-d8d3-4cb9-8c78-a6d2fc09a62d}">
+      <Declaration><![CDATA[// call at the finish step (§8.11.1): publishes the profile; FALSE = stop granted
+METHOD PROTECTED _M_EndOfCycle : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Profiler.CycleComplete();
+IF _stopReq THEN
+    _stopReq := FALSE;
+    Execute := FALSE;
+    _M_Complete();
+    _M_EndOfCycle := FALSE;
+ELSE
+    _M_EndOfCycle := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetStep" Id="{1066dd3c-baf2-43ea-91d5-309ad4ca7878}">
+      <Declaration><![CDATA[// §6.5 — the ONE line per step: record for the §6.9 walk AND the §8.11.4 profiler
+METHOD PROTECTED _M_SetStep
+VAR_INPUT
+    StepNo        : INT;
+    StepName      : STRING(120);
+    Awaits        : I_Module;
+    AwaitingLabel : STRING(120);
+    Class         : E_TimeClass;
+    ExpectedTime  : TIME;
+END_VAR
+VAR
+    i : INT;
+    e : ST_CondRecord;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF StepNo <> CurrentStep.StepNo THEN
+    _tStall(IN := FALSE);
+    _M_ClearPending();
+    FOR i := 1 TO PL_Fraktal.MAX_STEP_CONDS DO
+        CurrentStep.Conds[i] := e;
+    END_FOR
+END_IF
+CurrentStep.StepNo        := StepNo;
+CurrentStep.StepName      := StepName;
+CurrentStep.AwaitingLabel := AwaitingLabel;
+CurrentStep.Class         := Class;
+CurrentStep.ExpectedTime  := ExpectedTime;
+_awaits := Awaits;
+Profiler.StepChanged(StepNo := StepNo, StepName := StepName, Class := Class,
+    Expected := ExpectedTime);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_StallWalk" Id="{ee453cd4-7027-4207-b43e-f1a12367922c}">
+      <Declaration><![CDATA[// §6.9 — build the pending stall reason: step -> awaited command -> first FALSE condition
+METHOD PROTECTED _M_StallWalk]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF Pending.ReasonCode = E_Reason.NONE THEN
+    Pending.Since := F_Now();
+END_IF
+Pending.ReasonCode := E_Reason.STEP_STALLED;
+Pending.Severity   := E_Severity.LOW;
+Pending.Category   := E_Category.PROCESS;
+Pending.SourcePath := _name;
+Pending.Description := 'std.diagnostic.stepStalled';]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Supports" Id="{5285aa9e-3e18-4090-bed9-0119293228bb}">
+      <Declaration><![CDATA[// §3.4 — override to declare the type's mode set (baseline: AUTO + MANUAL)
+METHOD PROTECTED _M_Supports : BOOL
+VAR_INPUT
+    Mode : E_Mode;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_Supports := (Mode = E_Mode.AUTO) OR (Mode = E_Mode.MANUAL);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TakeDecision" Id="{e2e1443d-0421-4608-8ae5-b7bb44177b3c}">
+      <Declaration><![CDATA[// §6.11 — returns the chosen option once and clears the request (0 = none yet)
+METHOD PROTECTED _M_TakeDecision : INT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF DecisionAnswer > 0 THEN
+    _M_TakeDecision := DecisionAnswer;
+    DecisionAnswer := 0;
+    Decision.Prompt := '';
+ELSE
+    _M_TakeDecision := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CountGood" Id="{852e951b-039f-45bd-80a3-6417310e2406}">
+      <Declaration><![CDATA[// §8.11 — called by the chain/verdict glue at part completion
+METHOD CountGood : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[GoodCount := GoodCount + 1;
+CountGood := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CountRework" Id="{5c8e02d7-9a41-4f36-8b52-e04a71c6d983}">
+      <Declaration><![CDATA[// §8.11.2 — REWORK verdict counter (see CountGood)
+METHOD CountRework : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ReworkCount := ReworkCount + 1;
+CountRework := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CountNok" Id="{a686f5b6-4c90-4e12-9d98-fa111d14dfe8}">
+      <Declaration><![CDATA[METHOD CountNok : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[NokCount := NokCount + 1;
+CountNok := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PushHistory" Id="{3f9af757-7ef5-4499-8b8d-04dcd97acc93}">
+      <Declaration><![CDATA[// §6.9(a) — fixed ring, newest at HistoryHead; never allocates
+METHOD PROTECTED _M_PushHistory
+VAR_INPUT
+    D : ST_Diagnostic;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[HistoryHead := (HistoryHead MOD PL_Fraktal.MAX_DIAG_RING) + 1;
+History[HistoryHead] := D;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetModel" Id="{6a7ae71f-5111-44b3-bfc5-fd8bfdcd3719}">
+      <Declaration><![CDATA[// §3.1b/§3.8 — transactional model change: prepare the whole subtree, then commit.
+METHOD SetModel : BOOL
+VAR_INPUT
+    Id : ST_ModelId;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.CHANGEOVER) THEN
+    SetModel := FALSE;                 // §7.7
+    RETURN;
+END_IF
+IF _exec = E_ExecState.BUSY THEN
+    SetModel := FALSE;                 // changeover is not mid-cycle (§3.8 loads at CHANGEOVER)
+    RETURN;
+END_IF
+IF NOT PrepareRecipe(Model := Id) THEN
+    AbortRecipe();
+    SetModel := FALSE;
+    RETURN;
+END_IF
+CommitRecipe();                         // infallible after successful preparation
+Model := Id;                           // identity changes only after subtree commit
+SetModel := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="RegisterAvailableModel" Id="{651bb1e1-71c6-4fb4-a063-4ea057e752cf}">
+      <Declaration><![CDATA[// §3.8 optional HMI/MES selection catalog. Recipe providers remain pluggable;
+// the application registers only the model identities it deliberately exposes.
+METHOD RegisterAvailableModel : BOOL
+VAR_INPUT
+    Id : ST_ModelId;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[RegisterAvailableModel := FALSE;
+IF (Id.ModelCode = '') OR (AvailableModelCount >= PL_Fraktal.MAX_RECIPES) THEN
+    RETURN;
+END_IF
+FOR i := 1 TO AvailableModelCount DO
+    IF AvailableModels[i].ModelCode = Id.ModelCode THEN
+        RETURN;
+    END_IF
+END_FOR
+AvailableModelCount := AvailableModelCount + 1;
+AvailableModels[AvailableModelCount] := Id;
+RegisterAvailableModel := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="OperatorReset" Id="{86e0365e-0665-41e9-b6f4-1156fe1cf971}">
+      <Declaration><![CDATA[// §8.3(b) — deliberate operator reset of blocking events (release-gated per §7.6/§14).
+// Closes WAIT_RESET events; an event whose condition persists stays ACTIVE.
+METHOD OperatorReset : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.ALARM_RESET) THEN
+    OperatorReset := FALSE;            // §7.7
+    RETURN;
+END_IF
+OperatorReset := AlarmLog.OperatorReset();]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="ModeActive" Id="{cadd011f-36e9-480f-9687-f764db6a93a1}">
+      <Declaration><![CDATA[PROPERTY ModeActive : E_Mode]]></Declaration>
+      <Get Name="Get" Id="{480f723e-9802-4414-9cf5-b9bf28538b7e}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModeActive := _mode;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ModelCode" Id="{52be901d-358c-42d1-8de9-24cabf037285}">
+      <Declaration><![CDATA[PROPERTY ModelCode : STRING(64)]]></Declaration>
+      <Get Name="Get" Id="{d1228112-dc00-4a78-8d96-06a0aa3db5e2}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModelCode := Model.ModelCode;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ModuleType" Id="{19c4f994-fbe0-4e50-80d5-d89b1a1fb1fa}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{e694d09e-29b1-48cc-b1e6-0d26ae208150}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModuleType := E_ModuleType.UNIT;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="ManualCommandTo" Id="{4de99325-2725-4710-8292-b2f11cd5c61c}">
+      <Declaration><![CDATA[// §7.6.1 — single gated manual-command entry for the HMI. Accepts ONLY when this
+// Unit is in MANUAL (§3.4) AND the user holds MANUAL access (§7.7). Routes to the
+// target module's ManualCommand (through the command surface — defended, not
+// bypassed). Logs every accept/reject as a §8.3 event. Concrete Units override
+// _M_RouteManual to map TargetPath -> the child module.
+METHOD ManualCommandTo : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR
+VAR
+    auditSlot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ManualCommandTo := FALSE;
+IF _mode <> E_Mode.MANUAL THEN
+    auditSlot := AlarmLog.Raise(Reason := E_Reason.NONE,
+        Text := 'std.audit.manualCommandWrongMode', Source := TargetPath,
+        Severity := E_Severity.LOW, Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+    IF auditSlot > 0 THEN AlarmLog.Gone(Slot := auditSlot); END_IF
+    RETURN;
+END_IF
+IF NOT Access.PermitsLogged(Gate := E_GatedAction.MANUAL) THEN
+    RETURN;                              // §7.7 denial already audited
+END_IF
+ManualCommandTo := _M_RouteManual(TargetPath := TargetPath, Value := Value);
+IF ManualCommandTo THEN
+    auditSlot := AlarmLog.Raise(Reason := E_Reason.NONE,
+        Text := 'std.audit.manualCommandAccepted', Source := TargetPath,
+        Severity := E_Severity.LOW, Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+ELSE
+    auditSlot := AlarmLog.Raise(Reason := E_Reason.UNSUPPORTED_COMMAND,
+        Text := 'std.audit.manualCommandRejected', Source := TargetPath,
+        Severity := E_Severity.LOW, Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+END_IF
+IF auditSlot > 0 THEN AlarmLog.Gone(Slot := auditSlot); END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_RouteManual" Id="{9fa4e2c2-3f5f-4681-aed5-559f1df0d2c6}">
+      <Declaration><![CDATA[// §7.6.1 — concrete Units override to map a target path to a child module and call
+// its ManualCommand. Base returns FALSE (no commandable children).
+METHOD PROTECTED _M_RouteManual : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_RouteManual := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_InitModePolicy" Id="{df8ba8da-c8fa-411c-85c1-392b353d5cfd}">
+      <Declaration><![CDATA[// §3.4.1/§3.14.4 — default per-mode switch policy. Station config (§3.8a) may
+// overwrite ModePolicy[] after this. By FRAMEWORK DEFAULT a mode change while a
+// sequence runs performs an IMMEDIATE software abort (E-stop-like, not a safety
+// function, §3.14.4) — so Style defaults to IMMEDIATE. GRACEFUL completion is an
+// opt-in: a Unit overrides OnModeExit to stop-after-cycle, or station config sets
+// Style := GRACEFUL for a mode. Shield only governs acceptance while running.
+METHOD PROTECTED _M_InitModePolicy
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[FOR i := 0 TO PL_Fraktal.MODE_COUNT-1 DO
+    ModePolicy[i].Shield := E_ModeSwitchShield.CONFIRM;
+    ModePolicy[i].Style  := E_ModeSwitchStyle.IMMEDIATE;
+END_FOR
+// Setup modes a running machine may not leave without an explicit Stop first.
+ModePolicy[TO_INT(E_Mode.CHANGEOVER)].Shield := E_ModeSwitchShield.BLOCKED_WHILE_RUNNING;
+ModePolicy[TO_INT(E_Mode.CALIBRATION)].Shield:= E_ModeSwitchShield.BLOCKED_WHILE_RUNNING;
+// HOME and MANUAL are freely interruptible; both inherit the IMMEDIATE default.
+ModePolicy[TO_INT(E_Mode.HOME)].Shield       := E_ModeSwitchShield.INTERRUPTIBLE;
+ModePolicy[TO_INT(E_Mode.MANUAL)].Shield     := E_ModeSwitchShield.INTERRUPTIBLE;]]></ST></Implementation>
+    </Method>
+    <Method Name="SetRunStyle" Id="{f598b9ad-9cb8-47de-920d-91798ab2094a}">
+      <Declaration><![CDATA[// §3.4.2 — HMI selects the run style for the active mode. Modes that don't opt in
+// (see _M_SupportsRunStyle) reject non-CONTINUOUS. Access: MODE_CHANGE-gated (§7.7).
+METHOD SetRunStyle : BOOL
+VAR_INPUT
+    Style : E_RunStyle;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.MODE_CHANGE) THEN
+    SetRunStyle := FALSE;
+    RETURN;
+END_IF
+IF (Style <> E_RunStyle.CONTINUOUS) AND NOT _M_SupportsRunStyle(Style := Style) THEN
+    SetRunStyle := FALSE;               // mode didn't opt into stepping (graceful reject)
+    RETURN;
+END_IF
+RunStyle := Style;
+SetRunStyle := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_SupportsRunStyle" Id="{f4e81ed4-d8b0-494c-bd7a-6b417d6219cf}">
+      <Declaration><![CDATA[// §3.4.2 — a concrete Unit overrides to opt a mode into SINGLE_STEP/HOLD_TO_RUN.
+// Base: only CONTINUOUS.
+METHOD PROTECTED _M_SupportsRunStyle : BOOL
+VAR_INPUT
+    Style : E_RunStyle;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SupportsRunStyle := (Style = E_RunStyle.CONTINUOUS);]]></ST></Implementation>
+    </Method>
+    <Method Name="StepRequest" Id="{64e64e1a-0c5a-460b-882a-ab14da4420e6}">
+      <Declaration><![CDATA[// §3.4.2 — HMI single-step: request advance of one step (edge-consumed by _M_StepGate).
+METHOD StepRequest : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.START_STOP)
+OR (RunStyle <> E_RunStyle.SINGLE_STEP) OR (_exec <> E_ExecState.BUSY) THEN
+    StepRequest := FALSE;
+    RETURN;
+END_IF
+_stepReq := TRUE;
+StepRequest := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="SetHoldRun" Id="{fbc37d38-8939-4f18-83b4-eb1341e2b47b}">
+      <Declaration><![CDATA[// §3.4.2 — HMI HOLD_TO_RUN input. NON-SAFETY (§9): never a dead-man; interlocks
+// still apply at every step. TRUE only while the operator holds the button.
+METHOD SetHoldRun : BOOL
+VAR_INPUT
+    Held : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF Held AND (NOT Access.PermitsLogged(Gate := E_GatedAction.START_STOP)
+OR (RunStyle <> E_RunStyle.HOLD_TO_RUN) OR (_exec <> E_ExecState.BUSY)) THEN
+    SetHoldRun := FALSE;
+    RETURN;
+END_IF
+_holdRun := Held;                     // FALSE is always accepted so a hold cannot stick
+SetHoldRun := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_StepGate" Id="{853d1e75-22c1-46fb-9a92-007882839a98}">
+      <Declaration><![CDATA[// §3.4.2 — the sequence author calls this at each step boundary; returns TRUE when
+// the sequence may advance. Steppable (default TRUE) is the PER-STEP stop-point flag:
+// a step with Steppable := FALSE runs straight through even in SINGLE_STEP/HOLD_TO_RUN
+// (group several motions into one operator step, or a step unsafe to pause mid-way).
+// CONTINUOUS: always TRUE. SINGLE_STEP: TRUE once per StepRequest edge (only if
+// Steppable). HOLD_TO_RUN: TRUE while held (only if Steppable). Interlocks are
+// enforced by the modules regardless (this only paces the sequence).
+METHOD PROTECTED _M_StepGate : BOOL
+VAR_INPUT
+    Steppable : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT Steppable THEN
+    _M_StepGate := TRUE;               // not a stop point: advance regardless of run style
+    RETURN;
+END_IF
+CASE RunStyle OF
+    E_RunStyle.SINGLE_STEP:
+        _stepArm(CLK := _stepReq);
+        _stepReq := FALSE;
+        _M_StepGate := _stepArm.Q;      // one advance per request edge
+    E_RunStyle.HOLD_TO_RUN:
+        _M_StepGate := _holdRun;        // advance only while held (NON-SAFETY)
+ELSE
+    _M_StepGate := TRUE;                // CONTINUOUS
+END_CASE]]></ST></Implementation>
+    </Method>
+    <Property Name="StopPending" Id="{f114fa1a-de45-4aa0-be5b-cf63c773b8b7}">
+      <Declaration><![CDATA[// §3.4 — TRUE while a stop is requested but the sequence is still finishing
+// (running -> stopping). HMI blinks the stop button on this.
+PROPERTY StopPending : BOOL]]></Declaration>
+      <Get Name="Get" Id="{135b3f46-0e90-48aa-8ac1-6493d51adeb3}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation><ST><![CDATA[StopPending := _stopReq AND (_exec = E_ExecState.BUSY);]]></ST></Implementation>
+      </Get>
+    </Property>
+    <Method Name="ReleaseReportStart" Id="{c78c7568-83f2-4d9d-9ae3-f47850cbc022}">
+      <Declaration><![CDATA[// Core §7.8 — pure query: the FULL rollup of why Start would be refused right now.
+// This is the authoritative machine predicate consumed by Start (no drift).
+// Released = TRUE means Start proceeds. Lists mode + access + blocking-alarm,
+// control-domain, and concrete mode-entry release reasons. The caller owns the
+// bounded report storage; returning this large record by value can overflow a
+// TwinCAT task stack when Start consumes the result.
+METHOD ReleaseReportStart : BOOL
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Report.Count := 0;
+Report.Released := FALSE;
+// access (§7.7)
+IF NOT Access.Permits(Gate := E_GatedAction.START_STOP) THEN
+    _M_AddReason(Report := Report, Text := 'std.release.insufficientStartStop', Reason := E_Reason.NONE, Kind := E_ReleaseKind.ACCESS);
+END_IF
+// mode / run state (§3.4)
+IF _modePend THEN
+    _M_AddReason(Report := Report, Text := 'std.release.modeChangePending', Reason := E_Reason.NONE, Kind := E_ReleaseKind.MODE);
+END_IF
+IF _mode = E_Mode.MANUAL THEN
+    _M_AddReason(Report := Report, Text := 'std.release.manualHasNoAutoSequence', Reason := E_Reason.NONE, Kind := E_ReleaseKind.MODE);
+END_IF
+IF _exec <> E_ExecState.READY THEN
+    _M_AddReason(Report := Report, Text := 'std.release.unitNotReady', Reason := E_Reason.NONE, Kind := E_ReleaseKind.MODE);
+END_IF
+// blocking alarm (§8.3)
+IF AlarmLog.Blocking THEN
+    _M_AddReason(Report := Report, Text := 'std.release.manualReset', Reason := E_Reason.NONE, Kind := E_ReleaseKind.ALARM);
+END_IF
+IF ControlDomain.Present AND NOT ControlDomain.ReadyForStart THEN
+    _M_AddReason(Report := Report, Text := 'std.release.controlDomainNotReady', Reason := E_Reason.NONE, Kind := E_ReleaseKind.INTERLOCK);
+END_IF
+// active mode's immediate entry/frontier conditions (concrete override)
+_M_AppendInterlocks(Report := Report);
+Report.Released := (Report.Count = 0);
+ReleaseReportStart := Report.Released;]]></ST></Implementation>
+    </Method>
+    <Method Name="ReleaseReportManual" Id="{9e9f491d-e5a8-435c-bc95-8f93e8c3530b}">
+      <Declaration><![CDATA[// Core §7.8 — full rollup of why a manual command to Target would be refused (§7.6.1).
+METHOD ReleaseReportManual : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Report.Count := 0;
+Report.Released := FALSE;
+IF _mode <> E_Mode.MANUAL THEN
+    _M_AddReason(Report := Report, Text := 'std.release.manualModeRequired', Reason := E_Reason.NONE, Kind := E_ReleaseKind.MODE);
+END_IF
+IF NOT Access.Permits(Gate := E_GatedAction.MANUAL) THEN
+    _M_AddReason(Report := Report, Text := 'std.release.insufficientManual', Reason := E_Reason.NONE, Kind := E_ReleaseKind.ACCESS);
+END_IF
+_M_AppendManualInterlocks(TargetPath := TargetPath, Value := Value, Report := Report);  // §7.6, target+command-aware
+Report.Released := (Report.Count = 0);
+ReleaseReportManual := Report.Released;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_AppendInterlocks" Id="{2bc971ff-4cee-49e6-a29f-4f727818205b}">
+      <Declaration><![CDATA[// Core §7.8 — concrete Units override to append the active mode's immediate
+// entry/frontier records via PermIntlk.AppendFailed(SourcePath, Report). Future step waits
+// stay in CurrentStep/Pending and are not blanket Start conditions. Base: nothing.
+METHOD PROTECTED _M_AppendInterlocks
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_AddReason" Id="{63c5e93f-708a-4c3a-aa1b-ee43d815fb4a}">
+      <Declaration><![CDATA[// Core §7.8 helper — append one non-interlock reason (bounds-checked).
+METHOD PROTECTED _M_AddReason
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR
+VAR_INPUT
+    Text : STRING(255);
+    Reason : E_Reason;
+    Kind : E_ReleaseKind;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF Report.Count >= PL_Fraktal.MAX_RELEASE_REASONS THEN
+    RETURN;
+END_IF
+Report.Count := Report.Count + 1;
+Report.Reasons[Report.Count].Description := Text;
+Report.Reasons[Report.Count].ReasonCode  := Reason;
+Report.Reasons[Report.Count].SourcePath  := _name;
+Report.Reasons[Report.Count].Kind        := Kind;
+Report.Reasons[Report.Count].Bypassable  := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="ReleaseReportAction" Id="{b52c134c-be50-4c5c-b4df-ad025ff72931}">
+      <Declaration><![CDATA[// Core §7.8 — full rollup for the simpler gated Unit actions (Stop, ALARM_RESET,
+// CHANGEOVER, MODE_CHANGE, step). Same predicate the gates use. Start has its own
+// richer ReleaseReportStart (interlocks); manual has ReleaseReportManual (target).
+METHOD ReleaseReportAction : BOOL
+VAR_INPUT
+    Gate : E_GatedAction;
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Report.Count := 0;
+Report.Released := FALSE;
+// access is the common gate
+IF NOT Access.Permits(Gate := Gate) THEN
+    _M_AddReason(Report := Report, Text := 'std.release.insufficientAction', Reason := E_Reason.NONE, Kind := E_ReleaseKind.ACCESS);
+END_IF
+// per-action state preconditions
+CASE Gate OF
+    E_GatedAction.CHANGEOVER:
+        IF _exec = E_ExecState.BUSY THEN
+            _M_AddReason(Report := Report, Text := 'std.release.changeoverRunning', Reason := E_Reason.NONE, Kind := E_ReleaseKind.MODE);
+        END_IF
+    E_GatedAction.ALARM_RESET:
+        IF NOT AlarmLog.Blocking THEN
+            _M_AddReason(Report := Report, Text := 'std.release.noBlockingAlarm', Reason := E_Reason.NONE, Kind := E_ReleaseKind.OTHER);
+        END_IF
+    E_GatedAction.MODE_CHANGE:
+        IF _modePend THEN
+            _M_AddReason(Report := Report, Text := 'std.release.modeChangeAlreadyPending', Reason := E_Reason.NONE, Kind := E_ReleaseKind.MODE);
+        END_IF
+ELSE
+    ;                                          // actions with no extra state predicate
+END_CASE
+Report.Released := (Report.Count = 0);
+ReleaseReportAction := Report.Released;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_OeeUpdate" Id="{8a4f011d-5d7a-4935-ad26-8a5fbcf63643}">
+      <Declaration><![CDATA[// §8.5.1 — attribute elapsed time to run/down/idle, recompute factors, sample ring.
+METHOD PROTECTED _M_OeeUpdate
+VAR
+    currentTime : TIME;
+    deltaMs     : UDINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[currentTime := TIME();                 // monotonic duration clock
+IF _oeeLast = T#0S THEN
+    _oeeLast := currentTime;
+    RETURN;
+END_IF
+deltaMs := TIME_TO_UDINT(currentTime) - TIME_TO_UDINT(_oeeLast); // wrap-safe on UDINT subtraction
+_oeeLast := currentTime;
+IF _exec = E_ExecState.BUSY THEN
+    Oee.RunMs := Oee.RunMs + deltaMs;
+ELSIF (_exec = E_ExecState.ERROR) OR AlarmLog.Blocking THEN
+    Oee.DownMs := Oee.DownMs + deltaMs;
+ELSE
+    Oee.IdleMs := Oee.IdleMs + deltaMs;
+END_IF
+_M_OeeCompute();
+_oeeSampMs := _oeeSampMs + deltaMs;
+IF _oeeSampMs >= PL_Fraktal.OEE_SAMPLE_MS THEN
+    _oeeSampMs := 0;
+    OeeTrendHead := (OeeTrendHead MOD PL_Fraktal.MAX_OEE_SAMPLES) + 1;
+    OeeTrend[OeeTrendHead].Availability := Oee.Availability;
+    OeeTrend[OeeTrendHead].Performance  := Oee.Performance;
+    OeeTrend[OeeTrendHead].Quality      := Oee.Quality;
+    OeeTrend[OeeTrendHead].Oee          := Oee.Oee;
+    OeeTrend[OeeTrendHead].OeeValid     := Oee.OeeValid;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_OeeCompute" Id="{2991f1a8-70f1-48a9-aa83-352243818d0a}">
+      <Declaration><![CDATA[// §8.5.1 — pure recompute of A/P/Q/OEE from the accumulators (testable in isolation).
+// Invalid factors are OMITTED from the product, never assumed 100% (O7).
+METHOD PROTECTED _M_OeeCompute
+VAR
+    total : UDINT;
+    denomA: UDINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[denomA := Oee.RunMs + Oee.DownMs;
+Oee.AvailValid := denomA > 0;
+IF Oee.AvailValid THEN
+    Oee.Availability := UDINT_TO_REAL(Oee.RunMs) / UDINT_TO_REAL(denomA);
+ELSE
+    Oee.Availability := 0.0;
+END_IF
+Oee.PerfValid := (Oee.IdealCycleMs > 0) AND (Oee.RunMs > 0);
+IF Oee.PerfValid THEN
+    Oee.Performance := UDINT_TO_REAL(Oee.IdealCycleMs) * UDINT_TO_REAL(GoodCount + NokCount)
+                       / UDINT_TO_REAL(Oee.RunMs);
+    IF Oee.Performance > 1.0 THEN
+        Oee.Performance := 1.0;          // faster than ideal caps at 100% (standard practice)
+    END_IF
+ELSE
+    Oee.Performance := 0.0;
+END_IF
+total := GoodCount + NokCount;
+Oee.QualValid := total > 0;
+IF Oee.QualValid THEN
+    Oee.Quality := UDINT_TO_REAL(GoodCount) / UDINT_TO_REAL(total);
+ELSE
+    Oee.Quality := 0.0;
+END_IF
+// product of VALID factors only; OEE valid iff at least one factor is valid
+Oee.Oee := 1.0;
+Oee.OeeValid := FALSE;
+IF Oee.AvailValid THEN Oee.Oee := Oee.Oee * Oee.Availability; Oee.OeeValid := TRUE; END_IF
+IF Oee.PerfValid  THEN Oee.Oee := Oee.Oee * Oee.Performance;  Oee.OeeValid := TRUE; END_IF
+IF Oee.QualValid  THEN Oee.Oee := Oee.Oee * Oee.Quality;      Oee.OeeValid := TRUE; END_IF
+IF NOT Oee.OeeValid THEN
+    Oee.Oee := 0.0;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="SetIdealCycle" Id="{21a43259-c0d5-420f-993f-704ffad3d187}">
+      <Declaration><![CDATA[// §8.5.1 — configure the ideal cycle time (per model, §3.8). 0 disables Performance.
+METHOD SetIdealCycle : BOOL
+VAR_INPUT
+    Ms : UDINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Oee.IdealCycleMs := Ms;
+SetIdealCycle := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="ResetOee" Id="{76d2024b-e4e9-424e-bbf4-fcfd488c8439}">
+      <Declaration><![CDATA[// §8.5.1 — clear accumulators + ring (shift start). Gated: §7.7 DATA_WRITE; audited §8.3.
+METHOD ResetOee : BOOL
+VAR
+    i : INT;
+    auditSlot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.DATA_WRITE) THEN
+    ResetOee := FALSE;
+    RETURN;
+END_IF
+Oee.RunMs := 0; Oee.DownMs := 0; Oee.IdleMs := 0;
+FOR i := 1 TO PL_Fraktal.MAX_OEE_SAMPLES DO
+    OeeTrend[i].Oee := 0.0; OeeTrend[i].OeeValid := FALSE;
+    OeeTrend[i].Availability := 0.0; OeeTrend[i].Performance := 0.0; OeeTrend[i].Quality := 0.0;
+END_FOR
+OeeTrendHead := 0;
+_oeeSampMs := 0;
+_M_OeeCompute();
+auditSlot := AlarmLog.Raise(Reason := E_Reason.NONE,
+    Text := 'std.audit.oeeReset', Source := _name,
+    Severity := E_Severity.LOW, Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+IF auditSlot > 0 THEN AlarmLog.Gone(Slot := auditSlot); END_IF
+ResetOee := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="ShelveAlarm" Id="{254b8716-80f2-462f-8e49-d89ea86b5224}">
+      <Declaration><![CDATA[// §8.10 — gated HMI entry: shelve an active alarm's ANNUNCIATION (control untouched).
+// §7.7 ALARM_SHELVE + audit; refuses SAFETY / unrationalized reasons (AlarmLog rules).
+METHOD ShelveAlarm : BOOL
+VAR_INPUT
+    Slot      : INT;
+    DurationS : UDINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.ALARM_SHELVE) THEN
+    ShelveAlarm := FALSE;
+    RETURN;
+END_IF
+ShelveAlarm := AlarmLog.Shelve(Slot := Slot, DurationS := DurationS);]]></ST></Implementation>
+    </Method>
+    <Method Name="UnshelveAlarm" Id="{f39e65ca-0fee-42d8-be9a-7e2098b02e14}">
+      <Declaration><![CDATA[// §8.10 — gated HMI entry: restore annunciation.
+METHOD UnshelveAlarm : BOOL
+VAR_INPUT
+    Slot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT Access.PermitsLogged(Gate := E_GatedAction.ALARM_SHELVE) THEN
+    UnshelveAlarm := FALSE;
+    RETURN;
+END_IF
+UnshelveAlarm := AlarmLog.Unshelve(Slot := Slot);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_AppendManualInterlocks" Id="{c18caeb9-871a-4a4c-aad2-2711e3ced37a}">
+      <Declaration><![CDATA[// Core §7.8 — target-aware hook for the MANUAL release rollup: a concrete Unit
+// overrides to append the §7.6 Release<Function> conditions of the SPECIFIC target
+// module. Base delegates to the Unit-level hook (non-breaking default).
+METHOD PROTECTED _M_AppendManualInterlocks
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_AppendInterlocks(Report := Report);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_HandleHmiRequest" Id="{63ae9d50-339f-4904-a8ec-81f853aed962}">
+      <Declaration><![CDATA[// §3.10/§14 — consume one committed OPC UA request exactly once.
+METHOD PROTECTED _M_HandleHmiRequest
+VAR
+    modelId  : ST_ModelId;
+    modeReq  : E_Mode;
+    styleReq : E_RunStyle;
+    gateReq  : E_GatedAction;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF HmiRequest.Sequence = _hmiLastSequence THEN
+    RETURN;
+ELSE
+    _hmiLastSequence := HmiRequest.Sequence;
+END_IF
+
+HmiResponse.Accepted := FALSE;
+HmiResponse.Diagnostic := '';
+HmiResponse.Report.Count := 0;
+HmiResponse.Report.Released := FALSE;
+
+CASE HmiRequest.Kind OF
+    E_HmiRequestKind.LOGIN:
+        HmiResponse.Accepted := Access.RequestLogin(User := HmiRequest.User, Secret := HmiRequest.Secret);
+    E_HmiRequestKind.LOGOUT:
+        HmiResponse.Accepted := Access.RequestLogout();
+    E_HmiRequestKind.SET_MODE:
+        IF (HmiRequest.IntValue >= 0) AND (HmiRequest.IntValue < PL_Fraktal.MODE_COUNT) THEN
+            modeReq := HmiRequest.IntValue;
+            HmiResponse.Accepted := SetMode(Mode := modeReq);
+        ELSE
+            HmiResponse.Diagnostic := 'std.error.unsupportedModeRequest';
+        END_IF
+    E_HmiRequestKind.SET_MODEL:
+        modelId.ModelCode := HmiRequest.TextValue;
+        HmiResponse.Accepted := SetModel(Id := modelId);
+    E_HmiRequestKind.START:
+        HmiResponse.Accepted := Start();
+    E_HmiRequestKind.STOP:
+        HmiResponse.Accepted := Stop();
+    E_HmiRequestKind.CONTROL_ON:
+        ReqControlOn := TRUE;
+        ReqControlOff := FALSE;
+        HmiResponse.Accepted := TRUE;
+    E_HmiRequestKind.CONTROL_OFF:
+        ReqControlOff := TRUE;
+        ReqControlOn := FALSE;
+        HmiResponse.Accepted := TRUE;
+    E_HmiRequestKind.OPERATOR_RESET:
+        HmiResponse.Accepted := OperatorReset();
+    E_HmiRequestKind.DECISION_ANSWER:
+        DecisionAnswer := TO_INT(HmiRequest.IntValue);
+        HmiResponse.Accepted := TRUE;
+    E_HmiRequestKind.MANUAL_COMMAND:
+        HmiResponse.Accepted := ManualCommandTo(TargetPath := HmiRequest.TargetPath, Value := HmiRequest.IntValue);
+    E_HmiRequestKind.SET_RUN_STYLE:
+        IF (HmiRequest.IntValue >= 0) AND (HmiRequest.IntValue <= 2) THEN
+            styleReq := HmiRequest.IntValue;
+            HmiResponse.Accepted := SetRunStyle(Style := styleReq);
+        ELSE
+            HmiResponse.Diagnostic := 'std.error.unsupportedRunStyleRequest';
+        END_IF
+    E_HmiRequestKind.STEP_REQUEST:
+        HmiResponse.Accepted := StepRequest();
+    E_HmiRequestKind.SET_HOLD_RUN:
+        HmiResponse.Accepted := SetHoldRun(Held := HmiRequest.BoolValue);
+    E_HmiRequestKind.RELEASE_START:
+        ReleaseReportStart(Report := HmiResponse.Report);
+        HmiResponse.Accepted := TRUE;
+    E_HmiRequestKind.RELEASE_MANUAL:
+        ReleaseReportManual(TargetPath := HmiRequest.TargetPath, Value := HmiRequest.IntValue,
+            Report := HmiResponse.Report);
+        HmiResponse.Accepted := TRUE;
+    E_HmiRequestKind.RELEASE_ACTION:
+        IF (HmiRequest.IntValue >= 0) AND (HmiRequest.IntValue <= 10) THEN
+            gateReq := HmiRequest.IntValue;
+            ReleaseReportAction(Gate := gateReq, Report := HmiResponse.Report);
+            HmiResponse.Accepted := TRUE;
+        ELSE
+            HmiResponse.Diagnostic := 'std.error.unsupportedGatedActionRequest';
+        END_IF
+    E_HmiRequestKind.RESET_OEE:
+        HmiResponse.Accepted := ResetOee();
+    E_HmiRequestKind.WRITE_CONFIG:
+        HmiResponse.Accepted := _M_RouteConfigWrite(TargetPath := HmiRequest.TargetPath,
+            FieldName := HmiRequest.NameValue, TextValue := HmiRequest.TextValue);
+    E_HmiRequestKind.SHELVE_ALARM:
+        HmiResponse.Diagnostic := 'std.error.identityAlarmRequestNotSupported';
+    E_HmiRequestKind.UNSHELVE_ALARM:
+        HmiResponse.Diagnostic := 'std.error.identityAlarmRequestNotSupported';
+    E_HmiRequestKind.FORCE_CHANNEL:
+        HmiResponse.Accepted := _M_RouteForceChannel(ChannelPath := HmiRequest.TargetPath,
+            Force := HmiRequest.BoolValue, BoolText := HmiRequest.TextValue,
+            AnalogText := HmiRequest.NameValue);
+    E_HmiRequestKind.NONE:
+        HmiResponse.Diagnostic := 'std.error.emptyHmiRequest';
+ELSE
+    HmiResponse.Diagnostic := 'std.error.unsupportedHmiRequest';
+END_CASE
+
+IF NOT HmiResponse.Accepted AND (HmiResponse.Diagnostic = '') THEN
+    HmiResponse.Diagnostic := 'std.error.hmiRequestRejected';
+ELSE
+    HmiResponse.Diagnostic := HmiResponse.Diagnostic;
+END_IF
+HmiRequest.Secret := '';
+HmiResponse.AckSequence := _hmiLastSequence;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_RouteConfigWrite" Id="{4e524daf-e482-4764-8639-e58c1f363aa3}">
+      <Declaration><![CDATA[// Project/type override for published editable fields. Base fails closed.
+METHOD PROTECTED _M_RouteConfigWrite : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    FieldName  : STRING(160);
+    TextValue  : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_RouteConfigWrite := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_RouteForceChannel" Id="{301182d5-8822-451a-950c-49d23daf4640}">
+      <Declaration><![CDATA[// Application override routes only approved outputs through its force gate.
+METHOD PROTECTED _M_RouteForceChannel : BOOL
+VAR_INPUT
+    ChannelPath : STRING(255);
+    Force       : BOOL;
+    BoolText    : STRING(255);
+    AnalogText  : STRING(160);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_RouteForceChannel := FALSE;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="F_Now" Id="{68d87259-7bf4-47b2-856b-7fb151fae63f}" SpecialFunc="None">
+    <Declaration><![CDATA[// [TC3] Synchronized-clock read (Core §2.7 / TC3 §2.7). One clock feeds ALL
+// timestamps (diagnostics §8.8, alarms §8.3, traceability §3.16, host events §11.6).
+// Uses the TwinCAT system time (UTC). Validate against the pinned TwinCAT version.
+FUNCTION F_Now : DT
+VAR
+    ft  : Tc2_Utilities.T_FILETIME64;  // 100 ns units since 1601-01-01 (UTC)
+    sec : ULINT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[ft  := Tc2_Utilities.F_GetSystemTime();
+sec := (ft - 116444736000000000) / 10000000;    // -> seconds since 1970-01-01 (UTC)
+F_Now := DWORD_TO_DT(ULINT_TO_DWORD(sec));]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

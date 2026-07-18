@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Oee_Tests" Id="{01b56a9d-de3f-43a9-b389-a8b3f568386b}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.5.1: OEE compute — quality from counters, invalid factors omitted (never
+// 100%), performance capped at 1.0. Time accumulation itself is runtime-verified.
+FUNCTION_BLOCK FB_Oee_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _u : FB_ProbeUnitManual;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _u.Setup('Test.OeeUnit');
+    _w := TRUE;
+END_IF
+Quality_from_counters();
+Invalid_perf_omitted_from_product();
+Perf_capped_at_one();]]></ST>
+    </Implementation>
+    <Method Name="Quality_from_counters" Id="{01f2675a-6fb2-4bc7-9489-2acbbcb17c85}">
+      <Declaration><![CDATA[METHOD Quality_from_counters]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Quality_from_counters');
+_u.TestSeedOee(Good := 8, Nok := 2, RunMs := 750, DownMs := 250,
+               IdleMs := 0, IdealCycleMs := 0);
+_u.TestOeeCompute();
+AssertEquals_REAL(Expected := 0.8, Actual := _u.Oee.Quality, Delta := 0.001, Message := 'Q = 8/10');
+AssertEquals_REAL(Expected := 0.75, Actual := _u.Oee.Availability, Delta := 0.001, Message := 'A = 750/1000');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Invalid_perf_omitted_from_product" Id="{81116820-0d64-48f4-b0d3-573830b97106}">
+      <Declaration><![CDATA[METHOD Invalid_perf_omitted_from_product]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Invalid_perf_omitted_from_product');
+AssertFalse(Condition := _u.Oee.PerfValid, Message := 'IdealCycleMs=0 -> Performance invalid (§8.5.1)');
+AssertEquals_REAL(Expected := 0.6, Actual := _u.Oee.Oee, Delta := 0.001, Message := 'OEE = A*Q only (0.75*0.8), P NOT assumed 100%');
+AssertTrue(Condition := _u.Oee.OeeValid, Message := 'OEE still valid from the valid factors');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Perf_capped_at_one" Id="{e431e738-6299-44ae-b632-0f4e0d5c0e80}">
+      <Declaration><![CDATA[METHOD Perf_capped_at_one]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Perf_capped_at_one');
+_u.SetIdealCycle(Ms := 100);          // 10 cycles * 100ms ideal = 1000ms > 750ms run
+_u.TestOeeCompute();
+AssertTrue(Condition := _u.Oee.PerfValid, Message := 'performance valid with ideal set');
+AssertEquals_REAL(Expected := 1.0, Actual := _u.Oee.Performance, Delta := 0.001, Message := 'faster than ideal caps at 1.0');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

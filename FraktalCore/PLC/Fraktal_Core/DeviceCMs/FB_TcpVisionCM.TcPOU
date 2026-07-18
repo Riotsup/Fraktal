@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_TcpVisionCM" Id="{c0ab1cdc-7a95-4195-aefa-5db310645bdf}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.15.1a — CATEGORY CM: triggered TCP/ASCII vision system, vendor-neutral.
+// Configure for most devices (protocol strings below, §3.8-able, VERIFY vs the
+// vendor manual); extend only for genuinely special features. Function over
+// vendor: the forest shows 'vision inspection', never a brand.
+// Publishes: ParCfg, ParCmd, OutCmd, OutImm.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_TcpVisionCM EXTENDS FB_AsciiDeviceCM
+VAR_INPUT
+    ParCfg : ST_TcpVisionParCfg;
+    ParCmd : ST_TcpVisionParCmd;
+END_VAR
+VAR_OUTPUT
+    OutCmd : ST_TcpVisionOutCmd;
+    OutImm : ST_TcpVisionOutImm;
+END_VAR
+VAR
+    _done : BOOL;
+    _sent : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{1d2cd8e4-1ec4-4b6e-be1e-68df882d712b}">
+      <Declaration><![CDATA[// wire name + transport + endpoint; publishes the manual Trigger command (§7.6.1)
+METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    Chan : I_ByteChannel;
+    DevHost : STRING(80);
+    DevPort : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+_M_PublishCommand(Value := 1, Label := 'std.command.trigger');
+ParCfg.Host := DevHost;
+ParCfg.Port := DevPort;
+Setup := SetupDevice(Chan := Chan, DevHost := DevHost, DevPort := DevPort);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{ceb5191e-93b9-43b4-b2a0-5f3768c2c0d6}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _manualReq THEN
+    _manualReq := FALSE;
+    IF _manualCmd = 1 THEN
+        _sent := SendRequest(Text := ParCfg.TriggerCmd); // §7.6.1: one request through normal dispatch
+        IF _sent THEN OutCmd.JudgeOk := FALSE; OutCmd.ResultData := ''; END_IF
+    ELSE
+        _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedVisionCommand');
+        RETURN;
+    END_IF
+END_IF
+IF Execute THEN
+    IF NOT _sent THEN
+        _M_TagCommand(Id := 1, Label := 'std.command.inspect');
+        _sent := SendRequest(Text := ParCfg.TriggerCmd);
+        IF _sent THEN
+            OutCmd.JudgeOk := FALSE;
+            OutCmd.ResultData := '';
+        END_IF
+    ELSIF _done THEN
+        _sent := FALSE;
+        _done := FALSE;
+        _M_Complete();
+    END_IF
+ELSE
+    _sent := FALSE;
+    _done := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_OnResponse" Id="{5678fb21-dbf2-43fe-a5fb-eaa15026c231}">
+      <Declaration><![CDATA[// generic judgement parse: OkPrefix/NgPrefix + optional payload after ResultSep.
+// Devices with special result formats override THIS, nothing else.
+METHOD PROTECTED _M_OnResponse
+VAR_INPUT
+    Response : STRING(255);
+END_VAR
+VAR
+    pLen : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF LEFT(Response, LEN(ParCfg.OkPrefix)) = ParCfg.OkPrefix THEN
+    OutCmd.JudgeOk := TRUE;
+    pLen := LEN(ParCfg.OkPrefix);
+ELSIF LEFT(Response, LEN(ParCfg.NgPrefix)) = ParCfg.NgPrefix THEN
+    OutCmd.JudgeOk := FALSE;
+    pLen := LEN(ParCfg.NgPrefix);
+ELSE
+    _M_FaultN(PL_TcpDevReasons.DEV_PROTOCOL, 'std.error.unexpectedVisionReply');
+    RETURN;
+END_IF
+OutCmd.ResultData := '';
+IF LEN(Response) > pLen + LEN(ParCfg.ResultSep) THEN
+    IF MID(Response, LEN(ParCfg.ResultSep), pLen + 1) = ParCfg.ResultSep THEN
+        OutCmd.ResultData := RIGHT(Response, LEN(Response) - pLen - LEN(ParCfg.ResultSep));
+    END_IF
+END_IF
+_done := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{af116ee2-6d3c-444c-8150-d78a301620ac}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+Host := ParCfg.Host;
+Port := ParCfg.Port;
+Terminator := ParCfg.Terminator;
+RespTimeout := ParCfg.RespTimeout;
+OutImm.LinkState := LinkState;
+OutImm.LastResponse := LastResponse;
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{e81c3cc4-bd6e-4fa3-a493-f8f535c736a3}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

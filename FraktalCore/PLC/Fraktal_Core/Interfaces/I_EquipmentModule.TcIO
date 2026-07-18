@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_EquipmentModule" Id="{c722618f-bc54-470c-90bf-2f15cfdcce26}">
+    <Declaration><![CDATA[// Core §3.2 — discrete-command tier. Generic command id is DINT (a per-type
+// E_<Type>Command enum cannot appear in a shared interface); the type's typed
+// PLCopen surface (Command input) remains primary. IMPLEMENTATION_NOTES §2.
+INTERFACE I_EquipmentModule EXTENDS I_Module]]></Declaration>
+    <Method Name="ExecuteCommand" Id="{4aaba990-f356-4a06-8abc-3e78351e50a2}">
+      <Declaration><![CDATA[METHOD ExecuteCommand : BOOL
+VAR_INPUT
+    Command : DINT;   // value of the type's E_<Type>Command
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="AbortCommand" Id="{ada3cff8-6af7-4e87-8e07-d9dd4900fcea}">
+      <Declaration><![CDATA[METHOD AbortCommand : BOOL]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

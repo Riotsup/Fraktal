@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_AlarmMeta" Id="{0cf99d31-c2e7-4590-9c83-ee202cf5a009}">
+    <Declaration><![CDATA[// Core §8.9 — runtime rationalization record for one ReasonCode: what the operator
+// should DO, what happens if they don't, and whether shelving is permitted.
+TYPE ST_AlarmMeta :
+STRUCT
+    ReasonCode     : E_Reason;
+    OperatorAction : STRING(255);  // "what do I do about this?"
+    Consequence    : STRING(255);
+    Shelvable      : BOOL;         // §8.10: no record or FALSE -> not shelvable
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

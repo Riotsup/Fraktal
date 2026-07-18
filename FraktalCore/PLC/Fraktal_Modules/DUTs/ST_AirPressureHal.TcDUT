@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_AirPressureHal" Id="{580274b2-c7d9-42e8-b7bc-5c106834d946}">
+    <Declaration><![CDATA[TYPE ST_AirPressureHal :
+STRUCT
+    LowPressure : BOOL;
+    OperatingPressure : BOOL;
+    Quality : BOOL := TRUE;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

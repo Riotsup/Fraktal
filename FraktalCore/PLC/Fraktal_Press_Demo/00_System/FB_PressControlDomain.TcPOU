@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressControlDomain" Id="{924982e3-033c-4eaa-8a8e-63ae3a843292}" SpecialFunc="None">
+    <Declaration><![CDATA[// Application control-domain coordinator (Core §9.8). It describes one cage and
+// pneumatic power arrangement; it is infrastructure, not a fourth module tier.
+FUNCTION_BLOCK FB_PressControlDomain
+VAR_OUTPUT
+    Status : ST_ControlDomainStatus;
+END_VAR
+VAR
+    _unit : REFERENCE TO FB_PressDemoUnit;
+    _attached : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="Setup" Id="{3aacd78f-95d9-494b-850c-45e38ee9a7c6}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    UnitRef : REFERENCE TO FB_PressDemoUnit;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_unit REF= UnitRef;
+_attached := __ISVALIDREF(_unit);
+Status.Present := TRUE;
+Status.Id := 'PRESS-CAGE-01';
+Status.Name := 'project.controlDomain.press.name';
+Status.MemberCount := 1;
+Status.MemberUnitPaths[1] := UnitRef.Name;
+Status.Safety.Present := TRUE;
+Status.Safety.DeviceCount := 4;
+Status.Safety.Devices[1].Present := TRUE;
+Status.Safety.Devices[1].Name := 'EStop01';
+Status.Safety.Devices[1].Kind := E_SafetyDeviceKind.ESTOP;
+Status.Safety.Devices[1].AffectedPowerMask := 16#0000_0001;
+Status.Safety.Devices[1].Description := 'project.safety.estopNc';
+Status.Safety.Devices[2].Present := TRUE;
+Status.Safety.Devices[2].Name := 'PressGuard';
+Status.Safety.Devices[2].Kind := E_SafetyDeviceKind.GUARD_DOOR;
+Status.Safety.Devices[2].AffectedPowerMask := 16#0000_0001;
+Status.Safety.Devices[2].Description := 'project.safety.pressGuard';
+Status.Safety.Devices[3].Present := TRUE;
+Status.Safety.Devices[3].Name := 'TwoHand01';
+Status.Safety.Devices[3].Kind := E_SafetyDeviceKind.TWO_HAND_CONTROL;
+Status.Safety.Devices[3].AffectedPowerMask := 16#0000_0001;
+Status.Safety.Devices[3].Description := 'project.safety.twoHandControl';
+Status.Safety.Devices[4].Present := TRUE;
+Status.Safety.Devices[4].Name := 'SafeValve01';
+Status.Safety.Devices[4].Kind := E_SafetyDeviceKind.SAFETY_VALVE;
+Status.Safety.Devices[4].AffectedPowerMask := 16#0000_0001;
+Status.Safety.Devices[4].Description := 'project.safety.pressSafeValve';
+Status.ControlPower.Present := TRUE;
+Status.ControlPower.GroupCount := 1;
+Setup := _attached;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Update" Id="{db3a354d-c418-43f4-91b2-58a5e92e3fe0}">
+      <Declaration><![CDATA[METHOD M_Update
+VAR_INPUT
+    SafeEStopOk : BOOL;
+    SafeGuardClosed : BOOL;
+    SafeTwoHandActive : BOOL;
+    SafePneumaticPermit : BOOL;
+    SafetyFieldbusHealthy : BOOL;
+    StandardIoHealthy : BOOL;
+    RawEStopHealthy : BOOL;
+    PowerFeedback : BOOL;
+    PowerRequested : BOOL;
+    TwoHandFieldbusHealthy : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _attached THEN
+    Status.Safety.AllSafe := SafeEStopOk AND SafePneumaticPermit AND SafetyFieldbusHealthy;
+    Status.Safety.DemandActive := NOT SafeGuardClosed;
+    Status.Safety.ResetRequired := NOT SafeEStopOk;
+    Status.Safety.FaultActive := NOT SafetyFieldbusHealthy OR NOT StandardIoHealthy
+        OR (RawEStopHealthy <> SafeEStopOk);
+    Status.Safety.Devices[1].State := SEL(SafeEStopOk, E_SafetyState.DEMAND, E_SafetyState.READY);
+    Status.Safety.Devices[1].Ready := SafeEStopOk;
+    Status.Safety.Devices[1].DemandActive := NOT SafeEStopOk;
+    Status.Safety.Devices[1].SafeStateActive := NOT SafeEStopOk;
+    Status.Safety.Devices[1].ResetRequired := NOT SafeEStopOk;
+    Status.Safety.Devices[1].FieldbusHealthy := SafetyFieldbusHealthy;
+    Status.Safety.Devices[2].State := SEL(SafeGuardClosed, E_SafetyState.SAFE_STATE, E_SafetyState.READY);
+    Status.Safety.Devices[2].Ready := SafeGuardClosed;
+    Status.Safety.Devices[2].DemandActive := NOT SafeGuardClosed;
+    Status.Safety.Devices[2].SafeStateActive := NOT SafeGuardClosed;
+    Status.Safety.Devices[2].FieldbusHealthy := SafetyFieldbusHealthy;
+    Status.Safety.Devices[3].State := SEL(SafeTwoHandActive, E_SafetyState.READY, E_SafetyState.DEMAND);
+    Status.Safety.Devices[3].Ready := TwoHandFieldbusHealthy;
+    Status.Safety.Devices[3].DemandActive := SafeTwoHandActive;
+    Status.Safety.Devices[3].SafeStateActive := NOT SafeTwoHandActive;
+    Status.Safety.Devices[3].FieldbusHealthy := SafetyFieldbusHealthy;
+    Status.Safety.Devices[4].State := SEL(SafePneumaticPermit, E_SafetyState.FAULT, E_SafetyState.READY);
+    Status.Safety.Devices[4].Ready := SafePneumaticPermit;
+    Status.Safety.Devices[4].DemandActive := NOT SafePneumaticPermit;
+    Status.Safety.Devices[4].SafeStateActive := NOT SafePneumaticPermit;
+    Status.Safety.Devices[4].FaultActive := NOT SafePneumaticPermit;
+    Status.Safety.Devices[4].FieldbusHealthy := SafetyFieldbusHealthy;
+    Status.ControlPower.RequestedOn := PowerRequested;
+    Status.ControlPower.ControlOn := PowerFeedback;
+    Status.ControlPower.Transitioning := _unit.PneumaticPower.Busy;
+    Status.ControlPower.RearmRequired := _unit.PneumaticPower.ControlPower.RearmRequired;
+    Status.ControlPower.Groups[1] := _unit.PneumaticPower.OutImm.Status;
+    Status.ReadyForStart := Status.Safety.AllSafe AND Status.ControlPower.ControlOn
+        AND NOT Status.ControlPower.RearmRequired;
+ELSE
+    Status.ReadyForStart := FALSE;
+END_IF]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

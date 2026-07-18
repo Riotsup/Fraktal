@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ExecState" Id="{170dce39-3bea-48c6-a287-7cd187489385}">
+    <Declaration><![CDATA[// Core §6.1 — single derived command/module state
+{attribute 'qualified_only'}
+TYPE E_ExecState :
+(
+    READY   := 0,
+    BUSY    := 1,
+    DONE    := 2,
+    ERROR   := 3,
+    ABORTED := 4
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

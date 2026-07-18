@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_FieldbusTopology" Id="{43fb1c63-ff96-431b-882c-6501ac99dd53}">
+    <Declaration><![CDATA[// Core §10.5.1 — bounded published fieldbus table plus mapping validation.
+// Physical discovery fills nodes; the project catalog joins approved I/O metadata.
+TYPE ST_FieldbusTopology :
+STRUCT
+    NodeCount : INT;
+    Nodes : ARRAY[1..PL_Fraktal.MAX_BUS_NODES] OF ST_BusNode;
+    MappingValid : BOOL;
+    MappingDiagnostic : STRING(255); // localization key; empty when valid
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

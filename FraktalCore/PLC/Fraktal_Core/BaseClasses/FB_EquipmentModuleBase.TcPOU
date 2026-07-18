@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_EquipmentModuleBase" Id="{90f86e09-a7f8-40f2-ad09-f70330a42249}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §2.2 — discrete-command composite tier. Child recursion lives in
+// FB_CompositeModuleBase; this type supplies Equipment Module identity/capability.
+FUNCTION_BLOCK ABSTRACT FB_EquipmentModuleBase EXTENDS FB_CompositeModuleBase IMPLEMENTS I_EquipmentModule]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Property Name="ModuleType" Id="{381e8308-5bcb-40ca-9818-8a883dc4cf03}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{e46489ac-bd20-4bac-b0ef-28c89566d47d}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModuleType := E_ModuleType.EQUIPMENT_MODULE;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+  </POU>
+</TcPlcObject>

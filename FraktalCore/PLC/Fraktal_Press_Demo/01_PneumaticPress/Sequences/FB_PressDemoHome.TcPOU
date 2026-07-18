@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressDemoHome" Id="{27be7602-c702-dcca-822f-fb9fc2c72001}" SpecialFunc="None">
+    <Declaration><![CDATA[// HOME mode chain (Core §6.2/§6.8 ST skeleton on FB_SequenceBase): establish the
+// shared load-safe position, then complete. Finite (does not loop).
+FUNCTION_BLOCK FB_PressDemoHome EXTENDS FB_SequenceBase
+VAR
+    {attribute 'OPC.UA.DA' := '0'}
+    _outCmd : REFERENCE TO ST_PneumaticPressOutCmd;
+    {attribute 'OPC.UA.DA' := '0'}
+    _loadPosition : FB_PressDemoLoadPosition;
+    _loadPositionRunning : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[]]></ST></Implementation>
+    <Method Name="Setup" Id="{27be7602-c702-dcca-822f-fb9fc2c72002}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Host : I_SequenceHost;
+END_VAR
+VAR_IN_OUT
+    PressRam : FB_CylinderCM;
+    Door : FB_CylinderCM;
+    PartSlide : FB_CylinderCM;
+    OutCmd : ST_PneumaticPressOutCmd;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_outCmd REF= OutCmd;
+Setup := M_Attach(Host := Host) AND __ISVALIDREF(_outCmd)
+    AND _loadPosition.Setup(Host := Host, PressRam := PressRam, Door := Door, PartSlide := PartSlide);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Reset" Id="{27be7602-c702-dcca-822f-fb9fc2c72003}">
+      <Declaration><![CDATA[METHOD M_Reset]]></Declaration>
+      <Implementation><ST><![CDATA[M_ResetBase(FirstStep := 0);
+_loadPositionRunning := FALSE;
+_loadPosition.M_Reset(BaseStepNo := 0);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Run" Id="{27be7602-c702-dcca-822f-fb9fc2c72004}">
+      <Declaration><![CDATA[METHOD M_Run]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT _attached THEN
+    RETURN;
+END_IF
+CASE _step OF
+    0:  // initialize
+        M_Step(StepNo := 0, StepName := 'project.step.pressHomeInitialize',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        _outCmd.Homed := FALSE;
+        _outCmd.ChangeoverCompleted := FALSE;
+        _loadPositionRunning := FALSE;
+        _retVal := E_StepResult.ADVANCE;
+        M_Advance(OnAdvance := 900);
+    900:  // shared load-safe position (composite step, §6.7)
+        IF NOT _loadPositionRunning THEN
+            _loadPosition.M_Reset(BaseStepNo := 900);
+            _loadPositionRunning := TRUE;
+        END_IF
+        _loadPosition.M_Run();
+        IF _loadPosition.Done THEN
+            _loadPositionRunning := FALSE;
+            _retVal := E_StepResult.ADVANCE;
+        END_IF
+        M_Advance(OnAdvance := 999);
+    999:  // complete
+        M_Step(StepNo := 999, StepName := 'project.step.pressHomeComplete',
+            Awaits := 0, AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        _outCmd.Homed := TRUE;
+        M_Complete();
+ELSE
+    M_Fault(Reason := E_Reason.STEP_STALLED, DescriptionKey := 'std.error.undefinedStep');
+END_CASE]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

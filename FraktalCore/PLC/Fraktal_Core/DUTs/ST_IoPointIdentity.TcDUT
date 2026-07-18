@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_IoPointIdentity" Id="{e36defc6-1953-4ee7-88f6-5945a0bbbe64}">
+    <Declaration><![CDATA[// Core §10.2/§10.5.1 — immutable engineering identity of one mapped I/O point.
+// Device types consume roles; the project catalog supplies this physical identity.
+TYPE ST_IoPointIdentity :
+STRUCT
+    Tag : STRING(80);
+    Address : STRING(80);
+    DescriptionKey : STRING(160);
+    Path : STRING(255);
+    ModulePath : STRING(255);
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

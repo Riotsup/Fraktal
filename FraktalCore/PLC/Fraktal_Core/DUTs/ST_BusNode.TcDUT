@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_BusNode" Id="{3feb23f9-d44e-4181-96d6-379800628f9b}">
+    <Declaration><![CDATA[// Core §10.5.1 — one fieldbus node. The node/channel arrays are populated at
+// runtime from the master's diagnostics (TC3 §10.6: EtherCAT/ADS); this is the
+// published shape the generic HMI renders. Children are referenced by index into
+// the master's flat node table to keep the DUT bounded (no recursion in IEC types).
+TYPE ST_BusNode :
+STRUCT
+    Name        : STRING(80);
+    DescriptionKey : STRING(160); // hardware-description localization key
+    TypeId      : STRING(80);   // vendor/product
+    Address     : STRING(40);   // topological + logical
+    State       : E_NodeState;
+    LinkOk      : BOOL;
+    ParentIdx   : INT;          // index of parent node in the flat table (0 = root)
+    ChannelCount: INT;
+    Channels    : ARRAY[1..PL_Fraktal.MAX_NODE_CHANNELS] OF ST_IoChannel;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

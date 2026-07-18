@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_AccessProvider" Id="{02dbfd30-a6a4-4cc9-a8c8-fb07288e5b2e}">
+    <Declaration><![CDATA[// Core §7.7(c) — credential validation, injectable like every provider (§3.8).
+// Returns the granted level; NONE = authentication failed.
+INTERFACE I_AccessProvider]]></Declaration>
+    <Method Name="Authenticate" Id="{15290980-2c08-4c48-bfc3-81ef0d94a61f}">
+      <Declaration><![CDATA[METHOD Authenticate : E_AccessLevel
+VAR_INPUT
+    User   : STRING(32);
+    Secret : STRING(32);
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

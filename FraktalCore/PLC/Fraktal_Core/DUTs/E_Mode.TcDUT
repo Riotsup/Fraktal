@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_Mode" Id="{f6284cf2-c1fc-46c9-81bc-a99894d75af6}">
+    <Declaration><![CDATA[// Core §3.4 baseline modes + §3.17 optional modes
+{attribute 'qualified_only'}
+TYPE E_Mode :
+(
+    AUTO        := 0,
+    MANUAL      := 1,
+    HOME        := 2,
+    CHANGEOVER  := 3,
+    CALIBRATION := 4,
+    CAPABILITY  := 5,   // Core §3.17 (optional)
+    ADJUSTMENT  := 6    // Core §3.17 (optional)
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

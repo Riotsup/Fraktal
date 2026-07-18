@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ProbeUnit" Id="{a1676a86-f95f-460f-93ca-ed94ca5c7c5d}" SpecialFunc="None">
+    <Declaration><![CDATA[// minimal Unit for the base suite: 2-step looping chain, one wait-classed step
+FUNCTION_BLOCK FB_ProbeUnit EXTENDS FB_UnitBase
+VAR_INPUT
+    SimA, SimB : BOOL;
+    SimFault : BOOL;                    // deterministic fault injection for base-path tests
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{5b7a8b1b-03fd-4d4e-b0d2-5821d68d823c}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+StallTime := T#0S;                       // test: stall pending fires immediately
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{2d5f574b-01d6-4291-a6ce-b24e805a7176}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE _step OF
+    10:
+        _M_SetStep(StepNo := 100, StepName := 'project.test.stepA', Awaits := 0,
+            AwaitingLabel := '', Class := E_TimeClass.WORK, ExpectedTime := T#0S);
+        IF SimFault THEN
+            _M_Fault(E_Reason.TEST_FAULT, 'forced Unit fault');
+        ELSIF SimA THEN
+            _step := 20;
+        END_IF
+    20:
+        _M_SetStep(StepNo := 200, StepName := 'project.test.stepB', Awaits := 0,
+            AwaitingLabel := '', Class := E_TimeClass.WAIT_UPSTREAM, ExpectedTime := T#0S);
+        IF SimB THEN
+            _step := 30;
+        END_IF
+    30:
+        IF _M_EndOfCycle() THEN
+            _step := 10;
+        END_IF
+ELSE
+    _M_Fault(E_Reason.STEP_STALLED, 'undefined step');
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

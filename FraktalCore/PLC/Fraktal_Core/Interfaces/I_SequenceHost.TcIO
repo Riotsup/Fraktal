@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_SequenceHost" Id="{a3f81c62-4d07-4b9e-9a25-c806e5d13f74}">
+    <Declaration><![CDATA[// Core §6.7/§6.8 — the bridge from a separately-compiled sequence POU (SFC/ST/LD)
+// to its owning module's protected framework services: step record, condition
+// waits, run-style gate, part lifecycle, decisions, and completion/fault.
+// FB_UnitBase implements it once; a sequence receives it at Setup. It carries
+// framework plumbing ONLY — application decisions stay in the sequence's steps.
+INTERFACE I_SequenceHost]]></Declaration>
+    <Method Name="M_SequenceSetStep" Id="{2a14964c-5032-4856-b939-f5d956f67ed0}">
+      <Declaration><![CDATA[// §6.5 step record (feeds the §6.9 walk and the §8.11.4 profiler)
+METHOD M_SequenceSetStep
+VAR_INPUT
+    StepNo : INT;
+    StepName : STRING(120);
+    Awaits : I_Module;
+    AwaitingLabel : STRING(120);
+    Class : E_TimeClass;
+    ExpectedTime : TIME;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceAwait" Id="{1f2ce219-d15f-4633-88a8-bc691085a3d4}">
+      <Declaration><![CDATA[// §6.9(b) named plain-condition wait
+METHOD M_SequenceAwait : BOOL
+VAR_INPUT
+    Idx : INT;
+    Label : STRING(120);
+    Ok : BOOL;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceStepGate" Id="{c102ba44-56c0-4d41-96ab-b26618c1ec9e}">
+      <Declaration><![CDATA[// §3.4.2 run-style pacing gate
+METHOD M_SequenceStepGate : BOOL
+VAR_INPUT
+    Steppable : BOOL;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequencePartReceived" Id="{40e03619-3a51-419f-b62b-42db24d594b9}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_RECEIVED
+METHOD M_SequencePartReceived : BOOL]]></Declaration>
+    </Method>
+    <Method Name="M_SequencePartStarted" Id="{06294885-c02d-42b0-846e-204aaf6b7e62}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_PROCESSING_STARTED
+METHOD M_SequencePartStarted]]></Declaration>
+    </Method>
+    <Method Name="M_SequencePartRecord" Id="{3d089d3a-dcf6-4429-adb4-b6e9953d588a}">
+      <Declaration><![CDATA[// §3.16.1 measured value
+METHOD M_SequencePartRecord : BOOL
+VAR_INPUT
+    RecordName : STRING(64);
+    Value : LREAL;
+    Minimum : LREAL;
+    Maximum : LREAL;
+    Target : LREAL;
+    EngUnit : STRING(16);
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequencePartProcessed" Id="{f1aa0856-7283-449e-9932-63226565e4d0}">
+      <Declaration><![CDATA[// §3.16.3 EVENT_PART_PROCESSED (write-result-first; counts by verdict §8.11.2)
+METHOD M_SequencePartProcessed : BOOL
+VAR_INPUT
+    Verdict : E_Verdict;
+    Reason : E_Reason;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceCountGood" Id="{406cd80d-f7fc-4e07-a575-9e58e2aad7f5}">
+      <Declaration><![CDATA[// §8.11.2 carrier-less fallback counter
+METHOD M_SequenceCountGood]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceAskDecision" Id="{108584bd-a44d-44d4-ad0b-f41030ba26a2}">
+      <Declaration><![CDATA[// §6.11 publish a decision request
+METHOD M_SequenceAskDecision
+VAR_INPUT
+    Req : ST_DecisionRequest;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceTakeDecision" Id="{da27c43f-c108-4a03-a232-fe64d451e02d}">
+      <Declaration><![CDATA[// §6.11 consume the answer once (0 = none yet)
+METHOD M_SequenceTakeDecision : INT]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceClearDecision" Id="{1dc7d27e-7f29-40b9-8757-8fa787831b1c}">
+      <Declaration><![CDATA[// §6.11 withdraw an open request
+METHOD M_SequenceClearDecision]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceComplete" Id="{013513db-a10e-4f98-a8ac-865246b004ef}">
+      <Declaration><![CDATA[// §6.1 one-shot sequence completion (finite chains)
+METHOD M_SequenceComplete]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceEndOfCycle" Id="{54db52fa-1da8-4b8b-b718-e9099c4dc3cc}">
+      <Declaration><![CDATA[// §8.11.1 cycle-complete marker; FALSE = stop granted (chain must not loop)
+METHOD M_SequenceEndOfCycle : BOOL]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceFault" Id="{d42ba524-aab8-4d2a-840c-373327a71e8f}">
+      <Declaration><![CDATA[// §6.9 first-out fault from a step
+METHOD M_SequenceFault
+VAR_INPUT
+    Reason : E_Reason;
+    DescriptionKey : STRING(255);
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceStopPending" Id="{9b04e7c1-52d8-4f36-8a92-1c65fd83a247}">
+      <Declaration><![CDATA[// §3.4 — TRUE while a Stop is requested and the sequence still runs. A chain
+// polls this at its between-cycles wait so a stop need not ride out a phantom cycle.
+METHOD M_SequenceStopPending : BOOL]]></Declaration>
+    </Method>
+    <Method Name="M_SequenceStopNow" Id="{5e2a91d7-38c4-4b0f-a6e8-74d19c2b50f3}">
+      <Declaration><![CDATA[// §3.4/§8.11 — accept a pending Stop BETWEEN cycles: abandon the open cycle
+// profile (no §8.11.1 cycle is counted for a wait-only fragment) and complete.
+METHOD M_SequenceStopNow]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

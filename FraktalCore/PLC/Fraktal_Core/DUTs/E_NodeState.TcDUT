@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_NodeState" Id="{ed255b55-14da-4a1d-a0bf-9d709bec44cd}">
+    <Declaration><![CDATA[// Core §10.5.1 — neutral fieldbus node state (EtherCAT INIT/PREOP/SAFEOP/OP map on).
+// Ordinals are the HMI contract (E_NodeState in fieldbus.dart).
+{attribute 'qualified_only'}
+TYPE E_NodeState :
+(
+    OFFLINE     := 0,
+    INIT        := 1,
+    PREOP       := 2,
+    SAFEOP      := 3,
+    OPERATIONAL := 4,
+    FAULT       := 5
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

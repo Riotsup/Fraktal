@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_DigitalInputOutImm" Id="{2a89f921-00cc-4be4-8027-e2c9b2ba3f95}">
+    <Declaration><![CDATA[TYPE ST_DigitalInputOutImm :
+STRUCT
+    Value : BOOL;
+    Quality : BOOL;
+    IoTag : STRING(80);
+    Diagnostic : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PowerGroupCM_Tests" Id="{e63c9f76-4914-4dab-8e9a-08d69c4d19f4}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PowerGroupCM_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _group : FB_PowerGroupCM;
+    _hal : ST_PowerGroupHal;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Safety_trip_requires_deliberate_reenergize();]]></ST></Implementation>
+    <Method Name="Safety_trip_requires_deliberate_reenergize" Id="{ba6ca928-334b-43b3-a520-31165fbea984}">
+      <Declaration><![CDATA[METHOD Safety_trip_requires_deliberate_reenergize]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Safety_trip_requires_deliberate_reenergize');
+IF NOT _w THEN
+    _group.Setup(Name := 'Test.ValveZoneA', HalRef := _hal);
+    _hal.SafetyPermit := TRUE;
+    _hal.FieldbusHealthy := TRUE;
+    _w := TRUE;
+END_IF
+_group.Command := E_PowerGroupCommand.POWER_ON;
+_group.Execute := TRUE;
+_group();
+AssertTrue(Condition := _hal.EnableRequestOut, Message := 'Power On raises only the functional request');
+_hal.PowerFeedback := TRUE;
+_group();
+AssertTrue(Condition := _group.Done, Message := 'Power On completes on feedback');
+_hal.SafetyPermit := FALSE;
+_group();
+AssertFalse(Condition := _hal.EnableRequestOut, Message := 'safety permit drop withdraws request immediately');
+AssertTrue(Condition := _group.ControlPower.RearmRequired, Message := 'trip latches deliberate rearm');
+_hal.SafetyPermit := TRUE;
+_hal.PowerFeedback := FALSE;
+_group();
+AssertFalse(Condition := _hal.EnableRequestOut, Message := 'restored safety never self-reenergizes');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

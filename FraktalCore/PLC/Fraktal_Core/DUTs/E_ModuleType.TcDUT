@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ModuleType" Id="{55735832-2e8a-4ce0-9bff-772c0a576c6c}">
+    <Declaration><![CDATA[// Core §3.2
+{attribute 'qualified_only'}
+TYPE E_ModuleType :
+(
+    NONE             := 0,
+    UNIT             := 1,
+    EQUIPMENT_MODULE := 2,
+    CONTROL_MODULE   := 3
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

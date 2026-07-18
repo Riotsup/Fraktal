@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_EventSink" Id="{5dd95918-4a3a-4ac8-a98b-be1a3ba1601f}">
+    <Declaration><![CDATA[// Core §8.3(d) — historian/database adapter hook. Invoked at come and at close;
+// implementations (OPC UA A&C, SQL, MES) are deployment choices — deferred by design.
+INTERFACE I_EventSink]]></Declaration>
+    <Method Name="OnEvent" Id="{3c006dc6-09bf-4f3c-b22e-7d399cf39a11}">
+      <Declaration><![CDATA[METHOD OnEvent : BOOL
+VAR_INPUT
+    Ev : ST_AlarmEvent;
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

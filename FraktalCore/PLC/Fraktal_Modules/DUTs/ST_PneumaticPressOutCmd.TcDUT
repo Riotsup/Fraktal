@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_PneumaticPressOutCmd" Id="{7583c968-841f-4e62-94f4-18e8982ce347}">
+    <Declaration><![CDATA[TYPE ST_PneumaticPressOutCmd :
+STRUCT
+    CycleCompleted : BOOL;
+    Homed          : BOOL;
+    ChangeoverCompleted : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AccessManager" Id="{a5754c56-27d7-4f58-93a7-2bc76040ee69}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §7.7(c) — per-root session + enforcement. Login/logout is DATA-DRIVEN
+// (§3.10(a')): the HMI writes ReqUser/ReqSecret and pulses ReqLogin/ReqLogout;
+// the secret is cleared after every attempt. Policy default: fully open (§7.7(b)).
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_AccessManager
+VAR_INPUT
+    ReqUser   : STRING(32);          // HMI-writable login request
+    ReqSecret : STRING(32);          // cleared after each attempt (§7.7(c))
+    ReqLogin  : BOOL;
+    ReqLogout : BOOL;
+END_VAR
+VAR_OUTPUT
+    CurrentUser  : STRING(32);
+    CurrentLevel : E_AccessLevel;    // HMI greys controls from this; PLC re-checks
+    LoginFailed  : BOOL;             // last attempt outcome (HMI feedback)
+END_VAR
+VAR PERSISTENT
+    Policy : ST_AccessPolicy;        // §3.8a station config; edit gated by ACCESS_POLICY
+END_VAR
+VAR
+    _provider : I_AccessProvider;
+    _log      : POINTER TO FB_AlarmLog;
+    _tIdle    : TON;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// event/session handling is in Cyclic (called by the owning Unit each scan)]]></ST>
+    </Implementation>
+    <Method Name="Cyclic" Id="{f524a87a-e061-4ff8-b535-53d9cf845caa}">
+      <Declaration><![CDATA[METHOD Cyclic : BOOL
+VAR
+    lvl : E_AccessLevel;
+    loginHandled : BOOL;
+    logoutHandled : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[loginHandled := ReqLogin;
+IF loginHandled THEN
+    ReqLogin := FALSE;
+    lvl := E_AccessLevel.NONE;
+    IF _provider <> 0 THEN
+        lvl := _provider.Authenticate(User := ReqUser, Secret := ReqSecret);
+    END_IF
+    ReqSecret := '';                                   // never retain the secret
+    IF lvl > E_AccessLevel.NONE THEN
+        CurrentUser := ReqUser;
+        CurrentLevel := lvl;
+        LoginFailed := FALSE;
+        _M_Audit('std.audit.login', CurrentUser);
+    ELSE
+        LoginFailed := TRUE;
+        _M_Audit('std.audit.loginFailed', ReqUser);
+    END_IF
+END_IF
+logoutHandled := ReqLogout;
+IF logoutHandled THEN
+    ReqLogout := FALSE;
+    IF CurrentLevel > E_AccessLevel.NONE THEN
+        _M_Audit('std.audit.logout', CurrentUser);
+        CurrentUser := '';
+        CurrentLevel := E_AccessLevel.NONE;
+    END_IF
+END_IF
+// idle auto-logout (§7.7(c)); any successful login rearms it
+_tIdle(IN := (Policy.SessionTimeout > T#0S) AND (CurrentLevel > E_AccessLevel.NONE) AND NOT loginHandled,
+       PT := Policy.SessionTimeout);
+IF _tIdle.Q THEN
+    _M_Audit('std.audit.autoLogout', CurrentUser);
+    CurrentUser := '';
+    CurrentLevel := E_AccessLevel.NONE;
+END_IF
+Cyclic := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ConfigureRequired" Id="{ca211e14-0c26-4d31-aaf3-bf00dccfed16}">
+      <Declaration><![CDATA[// Startup/station-configuration seam; runtime HMI writes remain Unit-gated.
+METHOD ConfigureRequired : BOOL
+VAR_INPUT
+    Gate : E_GatedAction;
+    Level : E_AccessLevel;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF (TO_INT(Gate) < 0) OR (TO_INT(Gate) > TO_INT(E_GatedAction.POWER_CONTROL)) THEN
+    ConfigureRequired := FALSE;
+ELSE
+    Policy.Required[TO_INT(Gate)] := Level;
+    ConfigureRequired := TRUE;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="RequestLogin" Id="{126d9072-7c2d-4ed5-978f-501975d1299e}">
+      <Declaration><![CDATA[// ST-facing request seam. OPC UA clients continue to write the published request data.
+METHOD RequestLogin : BOOL
+VAR_INPUT
+    User : STRING(32);
+    Secret : STRING(32);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ReqUser := User;
+ReqSecret := Secret;
+ReqLogin := TRUE;
+RequestLogin := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="RequestLogout" Id="{2c9e0da4-edd0-461d-a5ce-adcdc0497718}">
+      <Declaration><![CDATA[// ST-facing request seam; the cyclic edge handler performs the state change and audit.
+METHOD RequestLogout : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[ReqLogout := TRUE;
+RequestLogout := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="Permits" Id="{0a2e27c0-07c7-4a25-aa9d-77c75345beec}">
+      <Declaration><![CDATA[// pure check for UI/logic — no logging
+METHOD Permits : BOOL
+VAR_INPUT
+    Gate : E_GatedAction;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Permits := TO_DINT(CurrentLevel) >= TO_DINT(Policy.Required[TO_INT(Gate)]);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PermitsLogged" Id="{95aa1389-db64-4f1a-8591-0c8cfda5199a}">
+      <Declaration><![CDATA[// gated-entry check: a DENIED attempt is audited as a MESSAGE event (§8.3/§7.7(c))
+METHOD PermitsLogged : BOOL
+VAR_INPUT
+    Gate : E_GatedAction;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PermitsLogged := Permits(Gate := Gate);
+IF NOT PermitsLogged THEN
+    _M_Audit('std.audit.accessDenied', CurrentUser);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Setup" Id="{380f7b09-d7bf-4407-aa62-ac88c12cd7da}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Provider : I_AccessProvider;
+    pAlarmLog : POINTER TO FB_AlarmLog;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF Provider <> 0 THEN
+    _provider := Provider;                  // Unit OnInit may attach only the audit log
+END_IF
+_log := pAlarmLog;
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Audit" Id="{4a43a0c7-56fe-4d93-9850-5fda5b3cfdb6}">
+      <Declaration><![CDATA[// audit trail for free: come+gone MESSAGE lands in the §8.3 ring
+METHOD PRIVATE _M_Audit
+VAR_INPUT
+    What : STRING(64);
+    Who : STRING(32);
+END_VAR
+VAR
+    auditSlot : INT;
+    txt : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _log = 0 THEN
+    RETURN;
+END_IF
+txt := CONCAT(What, ': ');
+txt := CONCAT(txt, Who);
+auditSlot := _log^.Raise(Reason := E_Reason.NONE, Text := txt,
+                 Source := 'Access', Severity := E_Severity.LOW,
+                 Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+IF auditSlot > 0 THEN
+    _log^.Gone(Slot := auditSlot);                     // instant come+gone -> ring entry
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

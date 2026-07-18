@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_RecipeSource" Id="{72fc7ca8-e076-4388-b7fa-b75d4d1464a9}">
+    <Declaration><![CDATA[// Core §3.8
+{attribute 'qualified_only'}
+TYPE E_RecipeSource :
+(
+    LOCAL       := 0,
+    OPCUA       := 1,
+    SOCKET_JSON := 2,
+    SOCKET_XML  := 3,
+    REST        := 4
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

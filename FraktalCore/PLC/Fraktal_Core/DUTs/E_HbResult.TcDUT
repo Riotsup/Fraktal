@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_HbResult" Id="{7288312f-1494-444f-bca6-fd31c48efa7a}">
+    <Declaration><![CDATA[// FB_DeviceConnectorBase transport contract (Core §3.15)
+{attribute 'qualified_only'}
+TYPE E_HbResult : (PENDING := 0, OK := 1, FAIL := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

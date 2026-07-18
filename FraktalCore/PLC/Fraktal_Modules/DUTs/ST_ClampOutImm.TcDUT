@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ClampOutImm" Id="{184f85e6-5f30-4b9f-a37f-d546bf79086c}">
+    <Declaration><![CDATA[TYPE ST_ClampOutImm :
+STRUCT
+    Clamped    : BOOL;
+    Unclamped  : BOOL;
+    Diagnostic : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

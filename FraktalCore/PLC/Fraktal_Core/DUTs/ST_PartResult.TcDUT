@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_PartResult" Id="{37d481f9-1c31-46b0-93d1-d8b841578dd0}">
+    <Declaration><![CDATA[// Core §3.16.1
+TYPE ST_PartResult :
+STRUCT
+    Verdict     : E_Verdict;     // NONE | OK | NOK | REWORK
+    ReasonCode  : E_Reason;      // first NOK reason — SAME vocabulary as a fault (Core §8.8)
+    Records     : ARRAY[1..PL_Fraktal.MAX_RESULTS] OF ST_MeasRecord;
+    StationPath : STRING(255);   // browse path of the producing station (Core §4.8)
+    Stamp       : DT;            // synchronized timestamp (Core §2.7)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

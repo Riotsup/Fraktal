@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PermIntlk" Id="{c44bc100-47c9-4685-895b-2e05a8c470ff}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §7.2 — the standard permissive/interlock container: fixed container,
+// author-chosen condition language (LD/ST/FBD drive Cond[i], TRUE = OK).
+// First FALSE, non-bypassed, defined condition is the first-out reason (Core §6.9).
+FUNCTION_BLOCK FB_PermIntlk
+VAR_INPUT
+    Cond : ARRAY[1..PL_Fraktal.MAX_PERMINTLK_COND] OF BOOL;   // author drives these (TRUE = OK)
+END_VAR
+VAR_OUTPUT
+    AllOk       : BOOL;   // every defined, non-bypassed condition is TRUE
+    AnyBypassed : BOOL;   // at least one defined condition is bypassed
+    FirstFailed : INT;    // lowest index of a FALSE, non-bypassed condition; 0 = none
+END_VAR
+VAR
+    _conds   : ARRAY[1..PL_Fraktal.MAX_PERMINTLK_COND] OF ST_IntlkCond;
+    _bypass  : ARRAY[1..PL_Fraktal.MAX_PERMINTLK_COND] OF BOOL;
+    _diag    : ST_Diagnostic;
+    _lastFf  : INT;
+END_VAR
+VAR
+    i   : INT;
+    ok  : BOOL;
+    byp : BOOL;
+    ff  : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// evaluate every defined condition; first FALSE (non-bypassed) is the first-out
+ok := TRUE;
+byp := FALSE;
+ff := 0;
+FOR i := 1 TO PL_Fraktal.MAX_PERMINTLK_COND DO
+    IF _conds[i].Defined THEN
+        IF _bypass[i] THEN
+            byp := TRUE;                       // bypassed => not evaluated, but flagged (Core §7.3)
+        ELSIF NOT Cond[i] THEN
+            ok := FALSE;
+            IF ff = 0 THEN
+                ff := i;
+            END_IF
+        END_IF
+    END_IF
+END_FOR
+AllOk       := ok;
+AnyBypassed := byp;
+FirstFailed := ff;
+
+IF ff = 0 THEN
+    _diag.ReasonCode  := E_Reason.NONE;
+    _diag.Description := '';
+ELSE
+    IF ff <> _lastFf THEN
+        _diag.Since := F_Now();                // stamp only on a NEW first-out (Core §8.8)
+    END_IF
+    _diag.ReasonCode  := _conds[ff].Reason;
+    _diag.Description := _conds[ff].Description;
+    _diag.Severity    := E_Severity.LOW;       // pending reason while blocked; owner promotes on fault
+    _diag.Category    := E_Category.PROCESS;
+    // SourcePath is set by the OWNER when copying the diagnostic up (Core §7.2 usage contract)
+END_IF
+_lastFf := ff;]]></ST>
+    </Implementation>
+    <Method Name="ClearBypass" Id="{fcf26c7e-2d47-4240-858f-5055c4bfafea}">
+      <Declaration><![CDATA[// Core §7.2 — clears all bypasses
+METHOD ClearBypass : BOOL
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i := 1 TO PL_Fraktal.MAX_PERMINTLK_COND DO
+    _bypass[i] := FALSE;
+END_FOR
+ClearBypass := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Define" Id="{c04006c4-636c-475a-926d-53829129fc47}">
+      <Declaration><![CDATA[// Core §7.2 — declare one condition record (typically once, in the owner's Setup/init).
+// Bounds-checked per Core §5.6: an out-of-range index is rejected, never written.
+METHOD Define : BOOL
+VAR_INPUT
+    Index       : INT;
+    Description : STRING(255);
+    Reason      : E_Reason;
+    Bypassable  : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (Index < 1) OR (Index > PL_Fraktal.MAX_PERMINTLK_COND) THEN
+    Define := FALSE;
+    RETURN;
+END_IF
+_conds[Index].Defined     := TRUE;
+_conds[Index].Description := Description;
+_conds[Index].Reason      := Reason;
+_conds[Index].Bypassable  := Bypassable;
+Define := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetBypass" Id="{16bf6bce-f21b-45b4-8a1d-c39220e99ec9}">
+      <Declaration><![CDATA[// Core §7.2/§7.3 — succeeds only for a defined, explicitly-bypassable condition
+METHOD SetBypass : BOOL
+VAR_INPUT
+    Index : INT;
+    On    : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (Index < 1) OR (Index > PL_Fraktal.MAX_PERMINTLK_COND) THEN
+    SetBypass := FALSE;
+    RETURN;
+END_IF
+IF _conds[Index].Defined AND _conds[Index].Bypassable THEN
+    _bypass[Index] := On;
+    SetBypass := TRUE;
+ELSE
+    SetBypass := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Diagnostic" Id="{c4118908-0766-4399-ac09-98f2220cd4b5}">
+      <Declaration><![CDATA[// Core §7.2 — first-out: Reason + Description of FirstFailed (ReasonCode = NONE when AllOk)
+PROPERTY Diagnostic : ST_Diagnostic]]></Declaration>
+      <Get Name="Get" Id="{1de42ce0-5e37-4220-9197-6a37fa085a1a}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Diagnostic := _diag;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="AppendFailed" Id="{7cb2ba49-169c-40e2-ab74-87f53e358aae}">
+      <Declaration><![CDATA[// Core §7.8 — append EVERY currently-failed (defined, non-bypassed, FALSE) condition
+// to a release report as INTERLOCK reasons. Returns the new count. Complete list,
+// not just first-out. Pure query: never commands, never mutates conditions.
+METHOD AppendFailed : INT
+VAR_INPUT
+    SourcePath : STRING(255);   // owner supplied explicitly; the container is reusable
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[FOR i := 1 TO PL_Fraktal.MAX_PERMINTLK_COND DO
+    IF _conds[i].Defined AND NOT _bypass[i] AND NOT Cond[i] THEN
+        IF Report.Count < PL_Fraktal.MAX_RELEASE_REASONS THEN
+            Report.Count := Report.Count + 1;
+            Report.Reasons[Report.Count].Description := _conds[i].Description;
+            Report.Reasons[Report.Count].ReasonCode  := _conds[i].Reason;
+            Report.Reasons[Report.Count].SourcePath  := SourcePath;
+            Report.Reasons[Report.Count].Kind        := E_ReleaseKind.INTERLOCK;
+            Report.Reasons[Report.Count].Bypassable  := _conds[i].Bypassable;
+        END_IF
+    END_IF
+END_FOR
+AppendFailed := Report.Count;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

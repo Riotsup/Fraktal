@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_SequenceBase" Id="{6c2f91a4-3e87-4b5d-a1f0-58d24c7be093}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §6.8 — THE provided step-chain base: an SFC/ST/LD sequence POU extends
+// this and gets the step record, condition waits, run-style pacing, the child
+// PLCopen drive, delays, and the shared transition result — without re-declaring
+// host plumbing per chain. The derived chart's actions are the only writers of
+// _retVal; every chart transition reads it; one shared exit action calls
+// M_ClearTransition. Framework flow-control lives here ONCE (§6.8(a)); the
+// application's command/wait/decision logic stays visible in each step action.
+FUNCTION_BLOCK ABSTRACT FB_SequenceBase
+VAR_OUTPUT
+    ActiveStep : INT;              // §6.5 mirror of the step record (chart-local view)
+    Done : BOOL;                   // finite chains: TRUE at their finish step
+END_VAR
+VAR
+    _step    : INT;                // §6.5 active step index (the ST `CASE _step OF` token)
+    _retVal  : E_StepResult;       // shared transition result (§6.10; committed then cleared)
+    _restart : BOOL;               // a step may request a chart restart (M_Run applies it)
+    {attribute 'OPC.UA.DA' := '0'}
+    _host : I_SequenceHost;        // owning module's framework services (§6.7)
+    _attached : BOOL;
+    _delay : TON;                  // M_Delay's timer (cleared with the transition)
+    _driveIssued : BOOL;           // M_MayIssue's per-step issue latch (cleared on commit)
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="M_Attach" Id="{83d17f5a-2b64-4c09-9ae8-01f6b2d47c35}">
+      <Declaration><![CDATA[// bind the owner's host bridge; the derived Setup adds its typed child bindings.
+METHOD M_Attach : BOOL
+VAR_INPUT
+    Host : I_SequenceHost;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_host := Host;
+_attached := (Host <> 0);
+M_Attach := _attached;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ResetBase" Id="{5a90c3e2-7f18-4d66-8b2a-9ce45d10f782}">
+      <Declaration><![CDATA[// clear the base flow state to the first step. The derived M_Reset calls this.
+METHOD M_ResetBase
+VAR_INPUT
+    FirstStep : INT := 0;          // the chain's initial step number (default N000)
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_step := FirstStep;
+ActiveStep := FirstStep;
+Done := FALSE;
+_restart := FALSE;
+M_ClearTransition();]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Advance" Id="{a71c4d38-52e9-4b06-9f81-3d0e6c25a704}">
+      <Declaration><![CDATA[// §6.8 ST-skeleton progression: at the END of a `CASE _step OF` body, commit the
+// step's shared transition result. On ADVANCE (or a declared JUMPn) go to the
+// mapped next step and clear the step-scoped latches so the new step re-arms — the
+// exact guarantee the SFC exit action gave, in one call. NONE stays put. The caller
+// passes its successor map; an unmapped result holds the step (safe, visible).
+METHOD M_Advance
+VAR_INPUT
+    OnAdvance : INT;               // next step for E_StepResult.ADVANCE
+    OnJump1   : INT := -1;         // next step for JUMP1 (-1 = not used here)
+    OnJump2   : INT := -1;
+    OnJump3   : INT := -1;
+END_VAR
+VAR
+    target : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[target := -1;
+CASE _retVal OF
+    E_StepResult.ADVANCE: target := OnAdvance;
+    E_StepResult.JUMP1:   target := OnJump1;
+    E_StepResult.JUMP2:   target := OnJump2;
+    E_StepResult.JUMP3:   target := OnJump3;
+END_CASE
+IF target >= 0 THEN
+    _step := target;
+    ActiveStep := target;
+    M_ClearTransition();           // §6.10: a completed result never leaks into the next step
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ClearTransition" Id="{2e6b48d1-95cf-4a73-b30e-6f81da29c504}">
+      <Declaration><![CDATA[// the ONE shared exit action: a completed step's result never leaks into the
+// next step, and the step-scoped helpers (delay, drive latch) re-arm.
+METHOD M_ClearTransition]]></Declaration>
+      <Implementation><ST><![CDATA[_retVal := E_StepResult.NONE;
+_driveIssued := FALSE;
+_delay(IN := FALSE);]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Step" Id="{b1f42a68-0d95-4e37-8cb1-27d3a9e60f14}">
+      <Declaration><![CDATA[// §6.5 step record + the chart-local ActiveStep mirror, one call.
+METHOD M_Step
+VAR_INPUT
+    StepNo : INT;
+    StepName : STRING(120);
+    Awaits : I_Module;
+    AwaitingLabel : STRING(120);
+    Class : E_TimeClass;
+    ExpectedTime : TIME;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[ActiveStep := StepNo;
+IF _host <> 0 THEN
+    _host.M_SequenceSetStep(StepNo := StepNo, StepName := StepName, Awaits := Awaits,
+        AwaitingLabel := AwaitingLabel, Class := Class, ExpectedTime := ExpectedTime);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Await" Id="{7d05e9c3-46a2-4f81-92b6-e3157cd80a49}">
+      <Declaration><![CDATA[// §6.9(b) named plain-condition wait (forward to the host).
+METHOD M_Await : BOOL
+VAR_INPUT
+    Idx : INT;
+    Label : STRING(120);
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_Await := FALSE;
+IF _host <> 0 THEN
+    M_Await := _host.M_SequenceAwait(Idx := Idx, Label := Label, Ok := Ok);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Gate" Id="{49c8e2b7-1af3-4d50-a6e9-8b02f47c9d16}">
+      <Declaration><![CDATA[// §3.4.2 run-style pacing gate (forward to the host).
+METHOD M_Gate : BOOL
+VAR_INPUT
+    Steppable : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_Gate := FALSE;
+IF _host <> 0 THEN
+    M_Gate := _host.M_SequenceStepGate(Steppable := Steppable);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_MayIssue" Id="{d70a5c94-83e1-4f26-b5d8-42c69e01af37}">
+      <Declaration><![CDATA[// §6.1 issue+await in ONE step: TRUE exactly once per step visit, when the
+// run-style gate permits (§3.4.2). The action then sets the child's typed
+// Command and raises Execute — visibly, in the step (§6.8). The child's Done
+// releases the handshake and sets _retVal := ADVANCE; a child Error needs no
+// step code — the owning Unit adopts it instantly via the §8.2 rollup.
+// The latch re-arms through the shared exit action (M_ClearTransition).
+METHOD M_MayIssue : BOOL
+VAR_INPUT
+    Steppable : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_MayIssue := FALSE;
+IF _driveIssued THEN
+    RETURN;
+END_IF
+IF M_Gate(Steppable := Steppable) THEN
+    _driveIssued := TRUE;
+    M_MayIssue := TRUE;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Delay" Id="{e94b06d2-571c-4a88-9fe3-c07a35d21b60}">
+      <Declaration><![CDATA[// a declared process wait in ONE step (settle/dwell). The timer runs while the
+// step is active and re-arms through the shared exit action.
+METHOD M_Delay : E_StepResult
+VAR_INPUT
+    PT : TIME;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_Delay := E_StepResult.NONE;
+_delay(IN := TRUE, PT := PT);
+IF _delay.Q THEN
+    _delay(IN := FALSE);
+    M_Delay := E_StepResult.ADVANCE;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_PartReceived" Id="{7c3e0f91-2ab8-4d64-95c7-e8140b6a25d9}">
+      <Declaration><![CDATA[// §3.16.3 forward (framework plumbing stays out of step actions).
+METHOD M_PartReceived : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[M_PartReceived := FALSE;
+IF _host <> 0 THEN
+    M_PartReceived := _host.M_SequencePartReceived();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_PartStarted" Id="{5d19c4a7-8e02-4f5b-b6d3-70f28c1e94a6}">
+      <Declaration><![CDATA[METHOD M_PartStarted]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequencePartStarted();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_PartRecord" Id="{e21b7f60-93d5-4a8c-8f14-c5d09e3b7a42}">
+      <Declaration><![CDATA[METHOD M_PartRecord : BOOL
+VAR_INPUT
+    RecordName : STRING(64);
+    Value : LREAL;
+    Minimum : LREAL;
+    Maximum : LREAL;
+    Target : LREAL;
+    EngUnit : STRING(16);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_PartRecord := FALSE;
+IF _host <> 0 THEN
+    M_PartRecord := _host.M_SequencePartRecord(RecordName := RecordName,
+        Value := Value, Minimum := Minimum, Maximum := Maximum, Target := Target,
+        EngUnit := EngUnit);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_PartProcessed" Id="{9f5a2c18-b7e4-4063-a58d-1e6c30d9f427}">
+      <Declaration><![CDATA[METHOD M_PartProcessed : BOOL
+VAR_INPUT
+    Verdict : E_Verdict;
+    Reason : E_Reason;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[M_PartProcessed := FALSE;
+IF _host <> 0 THEN
+    M_PartProcessed := _host.M_SequencePartProcessed(Verdict := Verdict, Reason := Reason);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_CountGood" Id="{31d84e0a-6cf2-49b7-90e5-2af7c81d53b6}">
+      <Declaration><![CDATA[METHOD M_CountGood]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequenceCountGood();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_AskDecision" Id="{c60f93b2-1e78-4ad5-8b40-97d2e5c1a083}">
+      <Declaration><![CDATA[// §6.11 forward
+METHOD M_AskDecision
+VAR_INPUT
+    Req : ST_DecisionRequest;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequenceAskDecision(Req := Req);
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_TakeDecision" Id="{a84c17f5-05d9-4e32-b6a1-38f0c92d67e4}">
+      <Declaration><![CDATA[METHOD M_TakeDecision : INT]]></Declaration>
+      <Implementation><ST><![CDATA[M_TakeDecision := 0;
+IF _host <> 0 THEN
+    M_TakeDecision := _host.M_SequenceTakeDecision();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ClearDecision" Id="{4b06d8e1-72af-4c95-a3d8-e50c19b7f234}">
+      <Declaration><![CDATA[METHOD M_ClearDecision]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequenceClearDecision();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Complete" Id="{68e5b09c-d3f1-4a27-85b6-04c7a2e91d58}">
+      <Declaration><![CDATA[// §6.1 one-shot completion forward (finite chains)
+METHOD M_Complete]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequenceComplete();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_EndOfCycle" Id="{d95f31a8-40c6-4e7b-92d0-6b18e4c5f7a9}">
+      <Declaration><![CDATA[// §8.11.1 cycle-complete marker forward; FALSE = stop granted (do not loop)
+METHOD M_EndOfCycle : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[M_EndOfCycle := FALSE;
+IF _host <> 0 THEN
+    M_EndOfCycle := _host.M_SequenceEndOfCycle();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_StopPending" Id="{f6c14e29-8b70-4da3-95c2-30e8a1d7f465}">
+      <Declaration><![CDATA[// §3.4 — poll at the between-cycles wait step (forward to the host).
+METHOD M_StopPending : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[M_StopPending := FALSE;
+IF _host <> 0 THEN
+    M_StopPending := _host.M_SequenceStopPending();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_StopNow" Id="{1a97d3c8-45e2-4bf1-8d06-b52c8fe0a374}">
+      <Declaration><![CDATA[// §3.4/§8.11 — accept the stop between cycles (forward to the host).
+METHOD M_StopNow]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequenceStopNow();
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_Fault" Id="{0b83f5e7-92c6-4d1a-8f40-56a91dce27b8}">
+      <Declaration><![CDATA[// §6.9 first-out fault from a step (forward to the host).
+METHOD M_Fault
+VAR_INPUT
+    Reason : E_Reason;
+    DescriptionKey : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _host <> 0 THEN
+    _host.M_SequenceFault(Reason := Reason, DescriptionKey := DescriptionKey);
+END_IF]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

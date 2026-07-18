@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PermIntlk_Tests" Id="{0c06d2ca-916a-430b-874b-45cc8ba9977c}" SpecialFunc="None">
+    <Declaration><![CDATA[// FB_PermIntlk suite — first-out ordering, bypass rules (Core §7.2/§7.3)
+FUNCTION_BLOCK FB_PermIntlk_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _pi  : FB_PermIntlk;
+    _pib : FB_PermIntlk;
+    _d   : ST_Diagnostic;
+    _w1, _w2 : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[FirstFailed_is_lowest_false_condition();
+Bypass_only_when_bypassable_and_flagged();]]></ST>
+    </Implementation>
+    <Method Name="FirstFailed_is_lowest_false_condition" Id="{56b8a7d0-fbc0-419c-aa3a-727fb9481988}">
+      <Declaration><![CDATA[METHOD FirstFailed_is_lowest_false_condition]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('FirstFailed_is_lowest_false_condition');
+IF NOT _w1 THEN
+    _pi.Define(Index := 1, Description := 'project.interlock.areaSafe', Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+    _pi.Define(Index := 2, Description := 'project.interlock.airPressureOk', Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+    _pi.Define(Index := 3, Description := 'project.interlock.downstreamReady', Reason := E_Reason.PERMISSIVE_NOT_MET, Bypassable := FALSE);
+    _w1 := TRUE;
+END_IF
+_pi.Cond[1] := TRUE;
+_pi.Cond[2] := FALSE;    // first failure
+_pi.Cond[3] := FALSE;    // later failure must NOT mask it
+_pi();
+AssertFalse(Condition := _pi.AllOk, Message := 'not AllOk with a FALSE condition');
+AssertEquals_INT(Expected := 2, Actual := _pi.FirstFailed,
+                 Message := 'lowest FALSE index is the first-out');
+_d := _pi.Diagnostic;
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.INTERLOCK_DROPPED),
+                   Actual   := TO_DWORD(_d.ReasonCode),
+                   Message  := 'diagnostic carries the first-out reason');
+AssertEquals_STRING(Expected := 'project.interlock.airPressureOk', Actual := _d.Description,
+                    Message := 'diagnostic carries the condition description');
+_pi.Cond[2] := TRUE;
+_pi.Cond[3] := TRUE;
+_pi();
+AssertTrue(Condition := _pi.AllOk, Message := 'AllOk when every condition TRUE');
+AssertEquals_INT(Expected := 0, Actual := _pi.FirstFailed, Message := 'FirstFailed clears');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Bypass_only_when_bypassable_and_flagged" Id="{75163ea8-c4fd-45bc-b867-267590964f23}">
+      <Declaration><![CDATA[METHOD Bypass_only_when_bypassable_and_flagged]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Bypass_only_when_bypassable_and_flagged');
+IF NOT _w2 THEN
+    _pib.Define(Index := 1, Description := 'project.interlock.guardClosed', Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+    _pib.Define(Index := 2, Description := 'project.interlock.partPresent', Reason := E_Reason.PERMISSIVE_NOT_MET, Bypassable := TRUE);
+    _w2 := TRUE;
+END_IF
+AssertFalse(Condition := _pib.SetBypass(Index := 1, On := TRUE),
+            Message := 'non-bypassable condition refuses bypass (Core 7.3)');
+AssertTrue(Condition := _pib.SetBypass(Index := 2, On := TRUE),
+           Message := 'bypassable condition accepts bypass');
+_pib.Cond[1] := TRUE;
+_pib.Cond[2] := FALSE;   // FALSE but bypassed
+_pib();
+AssertTrue(Condition := _pib.AllOk,       Message := 'bypassed FALSE condition does not block');
+AssertTrue(Condition := _pib.AnyBypassed, Message := 'bypass is flagged for HMI/alarms (Core 7.3)');
+_pib.ClearBypass();
+_pib();
+AssertFalse(Condition := _pib.AllOk, Message := 'clear-all restores evaluation');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_Nameplate" Id="{06c539fd-dc21-4bf0-803c-1d928cd3b7ec}">
+    <Declaration><![CDATA[// Core §3.10.1 — digital nameplate (asset identity). Field set aligned with the
+// IDTA 02006 Digital Nameplate submodel so the AAS projection (Annex K) is direct.
+// Static identity: set once at Setup, never runtime-mutated, never HMI-writable.
+TYPE ST_Nameplate :
+STRUCT
+    ProductUri        : STRING(255);  // globally unique asset URI (IDTA: URIOfTheProduct)
+    ManufacturerName  : STRING(80);
+    ProductDesignation: STRING(80);
+    SerialNumber      : STRING(40);
+    YearOfConstruction: STRING(8);
+    HardwareVersion   : STRING(24);
+    FirmwareVersion   : STRING(24);
+    SoftwareVersion   : STRING(24);
+    OrderCode         : STRING(40);
+    DocumentationUrl  : STRING(255);  // manual / handover docs (cf. IDTA 02004)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

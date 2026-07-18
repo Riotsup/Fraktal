@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{4560e9d4-7a02-4ba6-a81a-d2fb23cd3677}</ProjectGuid>
+    <SubObjectsSortedByName>True</SubObjectsSortedByName>
+    <Name>Fraktal_Demo</Name>
+    <ProgramVersion>3.1.4024.0</ProgramVersion>
+    <Application>{8fe02b36-774a-4d4d-b389-5a26ec54cce2}</Application>
+    <TypeSystem>{df6b16cb-d6e0-429c-9064-71549d6443dc}</TypeSystem>
+    <Implicit_Task_Info>{956bc1bb-f56c-4257-8176-f33a2c1e1ed7}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{15bf5b27-6040-42e8-9044-772b9a9eeb4c}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{e5ba9c26-0b89-4af1-b5aa-52388fe5116b}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{88b556bb-8142-45d1-8399-b42909a2ba42}</LibraryReferences>
+    <DefaultNamespace>Fraktal_Demo</DefaultNamespace>
+    <Company>fraktal-automation</Company>
+    <Title>Fraktal_Demo</Title>
+    <ProjectVersion>0.1.0.1</ProjectVersion>
+    <Released>false</Released>
+    <Author>fraktal-automation</Author>
+    <Description>Executable two-root Fraktal demonstration application. Not a reusable library.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="PlcTask.TcTTO"><SubType>Code</SubType></Compile>
+    <Compile Include="MAIN.TcPOU"><SubType>Code</SubType></Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_Standard">
+      <DefaultResolution>Tc2_Standard, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Standard</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc3_Module">
+      <DefaultResolution>Tc3_Module, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc3_Module</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Core">
+      <DefaultResolution>Fraktal_Core, 0.1.0.1 (fraktal-automation)</DefaultResolution>
+      <Namespace>Fraktal_Core</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Modules">
+      <DefaultResolution>Fraktal_Modules, 0.1.0.2 (fraktal-automation)</DefaultResolution>
+      <Namespace>Fraktal_Modules</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+</Project>

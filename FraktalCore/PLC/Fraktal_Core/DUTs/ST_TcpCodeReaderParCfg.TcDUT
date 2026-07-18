@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TcpCodeReaderParCfg" Id="{a3ef19fa-32ce-4fd4-bcf3-4ef95ea47fc8}">
+    <Declaration><![CDATA[TYPE ST_TcpCodeReaderParCfg :
+STRUCT
+    SchemaVersion : UINT := 1;
+    Host          : STRING(80);
+    Port          : UINT;
+    Terminator    : STRING(2) := '$R';
+    RespTimeout   : TIME := T#2S;
+    TriggerCmd    : STRING(40) := 'T';
+    NoReadText    : STRING(40) := 'NOREAD';
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

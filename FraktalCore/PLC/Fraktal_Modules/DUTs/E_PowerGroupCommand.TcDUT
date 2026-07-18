@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_PowerGroupCommand" Id="{b10472ef-856b-470a-846f-e16d8b1bb86d}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_PowerGroupCommand : (NONE := 0, POWER_ON := 1, POWER_OFF := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

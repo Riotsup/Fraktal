@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{e445472d-b1e1-45eb-ac0f-ff9a3ccc3364}</ProjectGuid>
+    <SubObjectsSortedByName>True</SubObjectsSortedByName>
+    <Name>Fraktal_Modules</Name>
+    <ProgramVersion>3.1.4024.0</ProgramVersion>
+    <Application>{518fcc8e-ecb2-4280-be52-80904866c236}</Application>
+    <TypeSystem>{387cadcb-f590-42f0-9cb0-b80673e94e32}</TypeSystem>
+    <Implicit_Task_Info>{e8841fb5-7058-4d55-bd8a-73c6db913640}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{37e88037-bd55-4582-955f-873866f0bb48}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{830010d6-a95d-46dc-819b-6ce4d39b1fcc}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{da5a669d-cfc7-4eb5-a112-4abe2332e963}</LibraryReferences>
+    <DefaultNamespace>Fraktal_Modules</DefaultNamespace>
+    <Placeholder>Fraktal_Modules</Placeholder>
+    <Company>fraktal-automation</Company>
+    <Title>Fraktal_Modules</Title>
+    <ProjectVersion>0.1.0.2</ProjectVersion>
+    <Released>false</Released>
+    <Author>fraktal-automation</Author>
+    <Description>Reusable Fraktal module library: cylinder CMs, clamp EM, simulation models, and configured device presets. Reason bands 10100s/11000s per Core 8.8.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="DUTs" />
+    <Folder Include="Params" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="DUTs\E_ConfigurableCylinderCommand.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_ClampCommand.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_CylinderCommand.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_CylinderPosition.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_PowerGroupCommand.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TwoHandHal.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TwoHandParCfg.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TwoHandParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TwoHandOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_TwoHandOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PneumaticPressParCfg.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PneumaticPressParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PneumaticPressOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PneumaticPressOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PowerGroupHal.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PowerGroupParCfg.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PowerGroupParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PowerGroupOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_PowerGroupOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ConfigurableCylinderParCfg.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigurableCylinderParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ConfigurableCylinderOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ConfigurableCylinderOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ConfigurableCylinderHal.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ClampParCfg.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ClampStationParCfg.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ClampStationParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ClampStationOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ClampStationOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ClampParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ClampOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_ClampOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_CylinderHal.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_CylinderParCfg.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_CylinderParCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_CylinderOutCmd.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_CylinderOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_CylinderIoIdentity.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_DigitalInputHal.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_DigitalInputOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_AirPressureHal.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="DUTs\ST_AirPressureOutImm.TcDUT"><SubType>Code</SubType></Compile>
+    <Compile Include="FB_ConfigurableCylinderCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_ConfigurableCylinderSim.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_ClampEM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_ClampStationUnit.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="FB_CylinderCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_DigitalInputCM.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="FB_AirPressureMonitorCM.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="FB_CylinderSim.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_Iv3VisionCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_Matrix220CM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="FB_PowerGroupCM.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="FB_TwoHandStartCM.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="Params\PL_ModuleReasons.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_Standard">
+      <DefaultResolution>Tc2_Standard, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Standard</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_System">
+      <DefaultResolution>Tc2_System, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_System</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_Utilities">
+      <DefaultResolution>Tc2_Utilities, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Utilities</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc3_Module">
+      <DefaultResolution>Tc3_Module, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc3_Module</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Core">
+      <DefaultResolution>Fraktal_Core, 0.1.0.3 (fraktal-automation)</DefaultResolution>
+      <Namespace>Fraktal_Core</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+</Project>

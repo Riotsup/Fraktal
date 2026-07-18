@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressRecipeCatalog" Id="{f1bc98f5-6ad1-4105-bbca-cdb707f304e6}" SpecialFunc="None">
+    <Declaration><![CDATA[// Owner-local recipe engineering data: model identities and their typed Unit records.
+// Generic validation/storage remains in FB_LocalRecipeProvider; process behavior
+// remains in the project-owned FB_PressDemoUnit. MAIN only composes the two.
+FUNCTION_BLOCK FB_PressRecipeCatalog
+VAR_OUTPUT
+    {attribute 'OPC.UA.DA' := '0'}
+    Provider : FB_LocalRecipeProvider;
+END_VAR
+VAR
+    _default : ST_PneumaticPressParCfg;
+    _aluminum : ST_PneumaticPressParCfg;
+    _plastic : ST_PneumaticPressParCfg;
+    _steel : ST_PneumaticPressParCfg;
+    _model : ST_ModelId;
+    _configured : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[// Static catalog: no cyclic work.]]></ST></Implementation>
+    <Method Name="Setup" Id="{f3703336-44cb-4ed4-a15f-6dc17b858973}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    UnitRef : REFERENCE TO FB_PressDemoUnit;
+END_VAR
+VAR
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _configured THEN
+    Setup := TRUE;
+    RETURN;
+END_IF
+
+// §8.11 per-model performance references: IdealCycleMs feeds OEE Performance
+// (§8.5.1); BaselineWorkMs arms the WORK-time degradation watch (§8.11.4(d)).
+// Values = design cycle for this training cell (motions + settle + dwell).
+_default.PressSettleTime := T#500MS;
+_default.TransferSettleTime := T#100MS;
+_default.RequireTwoHandStart := TRUE;
+_default.IdealCycleMs := 6000;
+_default.BaselineWorkMs := 6000;
+_aluminum.PressSettleTime := T#300MS;
+_aluminum.TransferSettleTime := T#80MS;
+_aluminum.RequireTwoHandStart := TRUE;
+_aluminum.IdealCycleMs := 5700;
+_aluminum.BaselineWorkMs := 5700;
+_plastic.PressSettleTime := T#650MS;
+_plastic.TransferSettleTime := T#120MS;
+_plastic.RequireTwoHandStart := TRUE;
+_plastic.IdealCycleMs := 6200;
+_plastic.BaselineWorkMs := 6200;
+_steel.PressSettleTime := T#1200MS;
+_steel.TransferSettleTime := T#150MS;
+_steel.RequireTwoHandStart := TRUE;
+_steel.IdealCycleMs := 6800;
+_steel.BaselineWorkMs := 6800;
+
+Ok := Provider.Register(ModelCode := '', RecipeKey := 'PneumaticPressUnit',
+    pData := ADR(_default), Size := SIZEOF(_default));
+Ok := Provider.Register(ModelCode := 'ALUMINUM', RecipeKey := 'PneumaticPressUnit',
+    pData := ADR(_aluminum), Size := SIZEOF(_aluminum)) AND Ok;
+Ok := Provider.Register(ModelCode := 'PLASTIC', RecipeKey := 'PneumaticPressUnit',
+    pData := ADR(_plastic), Size := SIZEOF(_plastic)) AND Ok;
+Ok := Provider.Register(ModelCode := 'STEEL', RecipeKey := 'PneumaticPressUnit',
+    pData := ADR(_steel), Size := SIZEOF(_steel)) AND Ok;
+
+_model.ModelCode := 'ALUMINUM';
+Ok := UnitRef.RegisterAvailableModel(Id := _model) AND Ok;
+_model.ModelCode := 'PLASTIC';
+Ok := UnitRef.RegisterAvailableModel(Id := _model) AND Ok;
+_model.ModelCode := 'STEEL';
+Ok := UnitRef.RegisterAvailableModel(Id := _model) AND Ok;
+
+_configured := Ok;
+Setup := Ok;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

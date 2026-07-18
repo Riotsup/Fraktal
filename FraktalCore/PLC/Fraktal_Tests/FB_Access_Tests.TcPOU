@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Access_Tests" Id="{eaea0db1-5490-46ab-b19f-9e2baa566e81}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §7.7 under test: open-by-default, threshold denial, data-driven login through
+// the local provider, secret cleared, logout re-denies, denied attempts audited.
+FUNCTION_BLOCK FB_Access_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _u  : FB_ProbeUnit;
+    _pr : FB_LocalAccessProvider;
+    _w  : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Default_policy_is_fully_open();
+Threshold_denies_then_login_permits_then_logout_denies();]]></ST>
+    </Implementation>
+    <Method Name="Default_policy_is_fully_open" Id="{1c4a183c-7370-44bd-8a31-5b4260b328aa}">
+      <Declaration><![CDATA[METHOD Default_policy_is_fully_open]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Default_policy_is_fully_open');
+IF NOT _w THEN
+    _u.Setup('Test.AccessUnit');
+    _pr.Register(User := 'tech1', Pin := '4711', Level := E_AccessLevel.TECHNICIAN);
+    _u();                                              // first scan wires audit log
+    _u.Access.Setup(Provider := _pr, pAlarmLog := ADR(_u.AlarmLog));
+    _w := TRUE;
+END_IF
+AssertTrue(Condition := _u.Access.Permits(Gate := E_GatedAction.MODE_CHANGE),
+           Message := 'NONE thresholds: no login needed (7.7b — the fully-open station)');
+AssertTrue(Condition := _u.SetMode(Mode := E_Mode.MANUAL),
+           Message := 'mode change works without any session');
+AssertTrue(Condition := _u.SetMode(Mode := E_Mode.AUTO), Message := 'back to AUTO');
+_u(); _u(); _u();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Threshold_denies_then_login_permits_then_logout_denies" Id="{c0445ba8-3700-466b-8cca-5b2681b333bc}">
+      <Declaration><![CDATA[METHOD Threshold_denies_then_login_permits_then_logout_denies]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Threshold_denies_then_login_permits_then_logout_denies');
+_u.Access.ConfigureRequired(Gate := E_GatedAction.MODE_CHANGE, Level := E_AccessLevel.TECHNICIAN);
+AssertFalse(Condition := _u.SetMode(Mode := E_Mode.MANUAL),
+            Message := 'denied below threshold (7.7c) — PLC re-checks, not the HMI');
+AssertTrue(Condition := _u.AlarmLog.RingHead > 0,
+           Message := 'denied attempt audited as a MESSAGE event (8.3)');
+// wrong PIN
+_u.Access.RequestLogin(User := 'tech1', Secret := '0000');
+_u();
+AssertTrue(Condition := _u.Access.LoginFailed, Message := 'wrong PIN rejected');
+AssertEquals_DINT(Expected := TO_DINT(E_AccessLevel.NONE),
+                  Actual := TO_DINT(_u.Access.CurrentLevel), Message := 'level stays NONE');
+// correct PIN — data-driven login (3.10a')
+_u.Access.RequestLogin(User := 'tech1', Secret := '4711');
+_u();
+AssertEquals_DINT(Expected := TO_DINT(E_AccessLevel.TECHNICIAN),
+                  Actual := TO_DINT(_u.Access.CurrentLevel), Message := 'TECHNICIAN session');
+AssertEquals_STRING(Expected := '', Actual := _u.Access.ReqSecret,
+                    Message := 'secret cleared after the attempt (7.7c)');
+AssertTrue(Condition := _u.SetMode(Mode := E_Mode.MANUAL),
+           Message := 'permitted at sufficient level');
+_u.Access.RequestLogout();
+_u();
+AssertEquals_DINT(Expected := TO_DINT(E_AccessLevel.NONE),
+                  Actual := TO_DINT(_u.Access.CurrentLevel), Message := 'logged out');
+AssertFalse(Condition := _u.SetMode(Mode := E_Mode.AUTO),
+            Message := 'denied again after logout');
+_u.Access.ConfigureRequired(Gate := E_GatedAction.MODE_CHANGE, Level := E_AccessLevel.NONE);  // restore
+_u.SetMode(Mode := E_Mode.AUTO);
+_u(); _u();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

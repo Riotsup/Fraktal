@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_MachineState" Id="{b47a2e91-5c33-4d08-9f61-8a2d40c7e1b5}">
+    <Declaration><![CDATA[// Core §8.11.3 — standardized machine state for OEE, classified every scan by
+// FB_UnitBase. Ordinals are a PLC↔HMI transport contract (append-only).
+{attribute 'qualified_only'}
+TYPE E_MachineState :
+(
+    PRODUCING  := 0,   // AUTO chain cycling, not blocked/starved -> uptime
+    IDLE       := 1,   // ready/active outside production, no work pending
+    BLOCKED    := 2,   // §8.11.1 downstream cannot accept -> external loss
+    STARVED    := 3,   // §8.11.1 upstream has not delivered -> external loss
+    DOWN       := 4,   // a fault holds the Unit (§8.2) -> downtime
+    CHANGEOVER := 5,   // CHANGEOVER mode active (§3.4) -> planned
+    STOPPED    := 6    // operator/parent Stop -> planned
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

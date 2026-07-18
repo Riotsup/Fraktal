@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_LocalRecipeProvider" Id="{1c0f8ef1-f5d0-4936-be06-851daa076225}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.8 local provider. Validation is generic BECAUSE SchemaVersion is the
+// first UINT of every ParCfg/record (§3.8): stored first-UINT must equal the
+// target's initialized first-UINT, else Load = FALSE and the caller faults
+// RECIPE_INVALID. Never a partial apply. Types stage through PrepareRecipe.
+FUNCTION_BLOCK FB_LocalRecipeProvider IMPLEMENTS I_RecipeProvider
+VAR
+    _n    : INT;
+    _models : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF STRING(80);
+    _keys   : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF STRING(80);
+    {attribute 'OPC.UA.DA' := '0'}
+    _ptr  : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF PVOID;
+    _size : ARRAY[1..PL_Fraktal.MAX_RECIPES] OF UDINT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// no cyclic body]]></ST>
+    </Implementation>
+    <Method Name="Load" Id="{b1aef472-8321-4e67-becf-11964cf574b7}">
+      <Declaration><![CDATA[METHOD Load : BOOL
+VAR_INPUT
+    ModelCode : STRING;
+    RecipeKey : STRING;
+    pParCfg : PVOID;
+    Size    : UDINT;
+END_VAR
+VAR
+    i, hit, fallback : INT;
+    puT, puS : POINTER TO UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Load := FALSE;
+hit := 0;
+fallback := 0;
+FOR i := 1 TO _n DO
+    IF (_keys[i] = RecipeKey) AND (_models[i] = ModelCode) THEN
+        hit := i;
+        EXIT;
+    ELSIF (_keys[i] = RecipeKey) AND (_models[i] = '') THEN
+        fallback := i;
+    END_IF
+END_FOR
+IF hit = 0 THEN
+    hit := fallback;
+END_IF
+IF (hit = 0) OR (pParCfg = 0) OR (_size[hit] <> Size) THEN
+    RETURN;                                       // unknown/size mismatch -> caller faults (§3.8)
+END_IF
+puT := pParCfg;
+puS := _ptr[hit];
+IF puT^ <> puS^ THEN
+    RETURN;                                       // SchemaVersion mismatch: migrate-or-fault (§3.8)
+END_IF
+MEMCPY(destAddr := pParCfg, srcAddr := _ptr[hit], n := Size);
+Load := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Register" Id="{df7be18b-5d33-4de5-8a36-02fc90bfd518}">
+      <Declaration><![CDATA[// application wiring: one record per (ModelCode, RecipeKey); empty ModelCode is fallback.
+METHOD Register : BOOL
+VAR_INPUT
+    ModelCode : STRING(80);
+    RecipeKey : STRING(80);
+    pData  : PVOID;
+    Size   : UDINT;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (_n >= PL_Fraktal.MAX_RECIPES) OR (pData = 0) OR (RecipeKey = '') THEN
+    Register := FALSE;
+    RETURN;
+END_IF
+FOR i := 1 TO _n DO
+    IF (_models[i] = ModelCode) AND (_keys[i] = RecipeKey) THEN
+        Register := FALSE;
+        RETURN;
+    END_IF
+END_FOR
+_n := _n + 1;
+_models[_n] := ModelCode;
+_keys[_n]   := RecipeKey;
+_ptr[_n]  := pData;
+_size[_n] := Size;
+Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{5012cd35-f8d3-4752-893d-710a9a976af9}">
+      <Declaration><![CDATA[PROPERTY Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{ed439f68-57a6-4ba8-9c56-d5b8a2eb482c}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Ready := (_n > 0);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Source" Id="{f8bb7684-b985-4251-a2ed-a6cff3c51e9c}">
+      <Declaration><![CDATA[PROPERTY Source : E_RecipeSource]]></Declaration>
+      <Get Name="Get" Id="{702d2ac1-64c4-4474-8c33-95a6f866cc73}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Source := E_RecipeSource.LOCAL;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+  </POU>
+</TcPlcObject>

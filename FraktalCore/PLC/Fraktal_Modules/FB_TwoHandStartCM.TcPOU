@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_TwoHandStartCM" Id="{a682738c-2440-4816-a6a7-b1803e20fa21}" SpecialFunc="None">
+    <Declaration><![CDATA[// Functional cycle-start edge from a certified two-hand-control result.
+// This CM does not implement simultaneity, anti-tie-down, PL or safe outputs.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_TwoHandStartCM EXTENDS FB_ControlModuleBase
+VAR_INPUT
+    ParCfg : ST_TwoHandParCfg;
+    ParCmd : ST_TwoHandParCmd;
+END_VAR
+VAR_OUTPUT
+    OutCmd : ST_TwoHandOutCmd;
+    OutImm : ST_TwoHandOutImm;
+END_VAR
+VAR
+    _hal : REFERENCE TO ST_TwoHandHal;
+    _safeRise : R_TRIG;
+    _armed : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Cyclic();]]></ST></Implementation>
+    <Method Name="Setup" Id="{af76d50b-0fc0-43f0-8c54-9e6f2b577ae2}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    HalRef : REFERENCE TO ST_TwoHandHal;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'std.moduleType.twoHand.name', DescriptionKey := 'std.moduleType.twoHand.description');
+_hal REF= HalRef;
+Setup := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{7f5f86be-bb67-4e83-8446-ec0253a2b369}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+OutImm.StartPulse := FALSE;
+OutCmd.StartAccepted := FALSE;
+IF __ISVALIDREF(_hal) THEN
+    OutImm.LeftPressed := _hal.LeftPressed;
+    OutImm.RightPressed := _hal.RightPressed;
+    OutImm.FieldbusHealthy := _hal.FieldbusHealthy;
+    OutImm.SafeActive := _hal.SafeActive AND _hal.FieldbusHealthy;
+    IF NOT _hal.FieldbusHealthy THEN
+        _armed := FALSE;
+    ELSIF NOT _hal.LeftPressed AND NOT _hal.RightPressed AND NOT _hal.SafeActive THEN
+        _armed := TRUE;
+    END_IF
+    _safeRise(CLK := OutImm.SafeActive);
+    IF _safeRise.Q AND (_armed OR NOT ParCfg.RequireReleaseBetweenCycles) THEN
+        OutImm.StartPulse := TRUE;
+        OutCmd.StartAccepted := TRUE;
+        _armed := FALSE;
+    END_IF
+ELSE
+    OutImm.LeftPressed := FALSE;
+    OutImm.RightPressed := FALSE;
+    OutImm.SafeActive := FALSE;
+    OutImm.FieldbusHealthy := FALSE;
+    _armed := FALSE;
+    _safeRise(CLK := FALSE);
+END_IF
+OutImm.Armed := _armed;
+OutImm.Diagnostic := Status.Diagnostic;
+Safety.Present := TRUE;
+Safety.AllSafe := OutImm.FieldbusHealthy;
+Safety.DemandActive := OutImm.LeftPressed OR OutImm.RightPressed;
+Safety.FaultActive := NOT OutImm.FieldbusHealthy;
+Safety.DeviceCount := 1;
+Safety.Devices[1].Present := TRUE;
+Safety.Devices[1].Name := _name;
+Safety.Devices[1].Kind := E_SafetyDeviceKind.TWO_HAND_CONTROL;
+Safety.Devices[1].Ready := OutImm.Armed;
+Safety.Devices[1].DemandActive := OutImm.LeftPressed OR OutImm.RightPressed;
+Safety.Devices[1].SafeStateActive := NOT OutImm.SafeActive;
+Safety.Devices[1].FieldbusHealthy := OutImm.FieldbusHealthy;
+Safety.Devices[1].Description := 'project.safety.twoHandControl';]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{a4a57d61-cc20-4816-af9d-afbbcb21759a}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.twoHandHasNoCommand');]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{b8f27c16-e1de-48ba-800b-755e22469593}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

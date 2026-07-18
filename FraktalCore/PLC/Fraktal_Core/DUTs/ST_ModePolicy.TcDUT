@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ModePolicy" Id="{27b4fb12-5ee5-4dc7-8307-66eb85aa30a5}">
+    <Declaration><![CDATA[// Core §3.4.1 — per-mode switch policy, indexed by TO_INT(E_Mode). Station config
+// (§3.8a): editable per deployment, sensible defaults set in FB_UnitBase init.
+TYPE ST_ModePolicy :
+STRUCT
+    Shield : E_ModeSwitchShield;
+    Style  : E_ModeSwitchStyle;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

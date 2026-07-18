@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_VerdictProvider" Id="{7d9e9983-52ee-45c0-b814-5387a7a8a07e}">
+    <Declaration><![CDATA[// Annex C §C.1 / Annex E — optional per-cycle part-verdict hook (0 = none => always OK).
+INTERFACE I_VerdictProvider]]></Declaration>
+    <Method Name="Evaluate" Id="{9bdb5379-c6ba-487d-9c30-366613371e2b}">
+      <Declaration><![CDATA[// TRUE = part OK; called once at the verdict step
+METHOD Evaluate : BOOL]]></Declaration>
+    </Method>
+    <Property Name="Reason" Id="{61914f85-540e-48f4-a1d3-750869548a1f}">
+      <Declaration><![CDATA[// first NOK reason when Evaluate() = FALSE — same vocabulary as a fault (Core §8.8)
+PROPERTY Reason : E_Reason]]></Declaration>
+      <Get Name="Get" Id="{fa67aa3a-ec8d-4c7d-8f9b-ee054f90c7db}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

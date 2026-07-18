@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_SafetyDeviceStatus" Id="{73f9a8b9-0563-4057-9bb5-3e88204f5900}">
+    <Declaration><![CDATA[TYPE ST_SafetyDeviceStatus :
+STRUCT
+    Present           : BOOL;
+    Name              : STRING(80);
+    Kind              : E_SafetyDeviceKind;
+    State             : E_SafetyState;
+    Ready             : BOOL;
+    DemandActive      : BOOL;
+    SafeStateActive   : BOOL;
+    ResetRequired     : BOOL;
+    FaultActive       : BOOL;
+    MutingActive      : BOOL;   // safety-evaluated; standard PLC cannot set
+    BridgeActive      : BOOL;   // keyed safety bridge; read-only here
+    FieldbusHealthy   : BOOL;
+    AffectedPowerMask : DWORD;  // documentation/status mapping, never safety logic
+    Description       : STRING(255);   // localization key
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

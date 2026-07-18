@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_DeviceConnector" Id="{6fceefb2-967c-4678-aea0-3e92b415e1dc}">
+    <Declaration><![CDATA[// Core §3.15 — networked smart device: session + mandatory link supervision.
+INTERFACE I_DeviceConnector EXTENDS I_Module]]></Declaration>
+    <Method Name="Connect" Id="{45bbd8bb-8dd5-4e83-ae93-5bf4e5a0c7db}">
+      <Declaration><![CDATA[METHOD Connect : BOOL]]></Declaration>
+    </Method>
+    <Method Name="Disconnect" Id="{8dedb901-a8a0-42b5-81bb-e23b761e875a}">
+      <Declaration><![CDATA[METHOD Disconnect : BOOL]]></Declaration>
+    </Method>
+    <Property Name="LastSeen" Id="{8e41e9fe-9bf7-492a-af08-cc128968f6ff}">
+      <Declaration><![CDATA[// timestamp of last healthy heartbeat (Core §2.7)
+PROPERTY LastSeen : DT]]></Declaration>
+      <Get Name="Get" Id="{98665b6a-981c-4f36-9fa3-effae047b0f2}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="Linked" Id="{620ccd86-b30b-4c4f-b5c1-8cf449315c82}">
+      <Declaration><![CDATA[// session up AND heartbeat healthy (Core §3.15.2)
+PROPERTY Linked : BOOL]]></Declaration>
+      <Get Name="Get" Id="{84ba559a-e85d-4179-9085-289dfde2cab3}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="LinkReason" Id="{7aed6a54-47ac-479a-b4ff-631e3098864a}">
+      <Declaration><![CDATA[// first-out link/protocol reason when not Linked
+PROPERTY LinkReason : ST_Diagnostic]]></Declaration>
+      <Get Name="Get" Id="{13cb7ebe-df78-49a9-9c97-4d712c4cd5a1}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

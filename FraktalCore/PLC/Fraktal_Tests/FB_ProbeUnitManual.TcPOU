@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ProbeUnitManual" Id="{b70d8e32-bdb5-4442-86f6-dfc08ed3da9a}" SpecialFunc="None">
+    <Declaration><![CDATA[// Minimal Unit for §7.6.1 tests: owns one basic cylinder, routes manual commands.
+FUNCTION_BLOCK FB_ProbeUnitManual EXTENDS FB_UnitBase
+VAR_OUTPUT
+    Cyl : FB_ConfigurableCylinderCM;
+    Hal : ST_ConfigurableCylinderHal;
+    Intlk : FB_PermIntlk;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{a0d6323a-1318-45da-a667-a4eabb1308ff}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+Cyl.Setup(Name := CONCAT(Name, '.Cyl'), HalRef := Hal, Recipe := 0);
+Intlk.Define(Index := 1, Description := 'project.interlock.airPressureOk', Reason := E_Reason.PERMISSIVE_NOT_MET, Bypassable := FALSE);
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{65b784f2-3cb8-45c4-9d2f-0967fa381126}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_Complete();  // trivial sequence]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_RouteManual" Id="{fd9bd26d-5208-41b0-a717-76ac266aa5f1}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_RouteManual : BOOL
+VAR_INPUT
+    TargetPath : STRING(255);
+    Value : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF TargetPath = CONCAT(_name, '.Cyl') THEN
+    _M_RouteManual := Cyl.ManualCommand(Value := Value);
+ELSE
+    _M_RouteManual := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{43b1f141-bf55-4e98-99fe-e8371696ffd2}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+Intlk();
+Cyl();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_AppendInterlocks" Id="{8160ac86-aa62-483d-99e3-c7c748806f90}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_AppendInterlocks
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Intlk.AppendFailed(SourcePath := _name, Report := Report);]]></ST></Implementation>
+    </Method>
+    <Method Name="SetAir" Id="{7d8f8b1e-d9e0-4b80-92d7-94e8d84b3c69}">
+      <Declaration><![CDATA[METHOD SetAir : BOOL
+VAR_INPUT
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Intlk.Cond[1] := Ok;
+SetAir := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="TestSetCylinderAbort" Id="{0344aab3-3364-4374-b543-2968d6e6ae8b}">
+      <Declaration><![CDATA[// Test injection stays inside the owner; callers cannot write through Cyl VAR_OUTPUT.
+METHOD TestSetCylinderAbort : BOOL
+VAR_INPUT
+    Value : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Cyl.Abort := Value;
+TestSetCylinderAbort := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="TestOeeCompute" Id="{877a9d73-6071-4e97-991b-805ab45ff83a}">
+      <Declaration><![CDATA[// test driver: recompute OEE from externally-set accumulators (§8.5.1 pure compute)
+METHOD TestOeeCompute : BOOL]]></Declaration>
+      <Implementation><ST><![CDATA[_M_OeeCompute();
+TestOeeCompute := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="TestSeedOee" Id="{fcd405e2-4b0f-47b5-9c5e-1f24daf9a696}">
+      <Declaration><![CDATA[METHOD TestSeedOee
+VAR_INPUT
+    Good : UDINT;
+    Nok : UDINT;
+    RunMs : UDINT;
+    DownMs : UDINT;
+    IdleMs : UDINT;
+    IdealCycleMs : UDINT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[GoodCount := Good;
+NokCount := Nok;
+Oee.RunMs := RunMs;
+Oee.DownMs := DownMs;
+Oee.IdleMs := IdleMs;
+Oee.IdealCycleMs := IdealCycleMs;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

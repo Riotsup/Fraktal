@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_IoTopologyPublisher_Tests" Id="{48966180-c90b-4d64-af4f-b1736243839f}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §10.5.1 reusable topology mechanism: bounded registration, validation,
+// live value/health refresh and exact-tag diagnostic correlation.
+FUNCTION_BLOCK FB_IoTopologyPublisher_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _publisher, _publisherDuplicate : FB_IoTopologyPublisher;
+    _data, _dataDuplicate : ST_FieldbusTopology;
+    _d : ST_Diagnostic;
+    _wired, _duplicateWired : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Publishes_value_health_and_diagnostic();
+Rejects_duplicate_channel_identity();]]></ST></Implementation>
+    <Method Name="Publishes_value_health_and_diagnostic" Id="{fc91f74a-2a63-41f2-af02-1d40e1f6b90a}">
+      <Declaration><![CDATA[METHOD Publishes_value_health_and_diagnostic]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Publishes_value_health_and_diagnostic');
+IF NOT _wired THEN
+    _publisher.Setup(DataRef := _data, ResetData := TRUE);
+    _publisher.M_DefineNode(Index := 1, Name := 'Master',
+        DescriptionKey := 'project.hardware.master', TypeId := 'Test',
+        Address := 'Master', ParentIndex := 0);
+    _publisher.M_DefineNode(Index := 2, Name := 'DI',
+        DescriptionKey := 'project.hardware.di', TypeId := 'Test DI',
+        Address := 'Terminal 1', ParentIndex := 1);
+    _publisher.M_DefineDigitalChannel(NodeIndex := 2, ChannelIndex := 1,
+        Tag := '_101B202A', DescriptionKey := 'project.io.101B202A',
+        Address := 'EL1809 Ch5', Path := 'Unit.IO._101B202A',
+        ModulePath := 'Unit.PressRam', Dir := E_ChannelDir.INPUT);
+    _wired := TRUE;
+END_IF
+AssertTrue(Condition := _publisher.M_Validate(), Message := 'valid catalog accepted');
+_publisher.M_SetAllHealth(Healthy := TRUE);
+AssertTrue(Condition := _publisher.M_SetDigitalValue(
+    NodeIndex := 2, ChannelIndex := 1, Value := TRUE), Message := 'known channel updated');
+_d.ReasonCode := PL_ModuleReasons.CYL_NOT_EXTENDED;
+_d.Description := 'project.error.pressDownSensorTimeout';
+_d.IoTag := '_101B202A';
+_publisher.M_BeginDiagnosticRefresh();
+_publisher.M_ApplyDiagnostic(Diagnostic := _d);
+AssertTrue(Condition := _data.Nodes[2].Channels[1].BoolValue,
+    Message := 'live value is published');
+AssertTrue(Condition := _data.Nodes[2].Channels[1].Quality,
+    Message := 'aggregate health reaches the channel');
+AssertTrue(Condition := _data.Nodes[2].Channels[1].FaultActive,
+    Message := 'exact diagnostic tag highlights the channel');
+AssertEquals_STRING(Expected := 'project.error.pressDownSensorTimeout',
+    Actual := _data.Nodes[2].Channels[1].Diagnostic,
+    Message := 'channel carries the diagnostic localization key');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Rejects_duplicate_channel_identity" Id="{26c26643-487e-4ce8-8c50-8f9403b07f64}">
+      <Declaration><![CDATA[METHOD Rejects_duplicate_channel_identity]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Rejects_duplicate_channel_identity');
+IF NOT _duplicateWired THEN
+    _publisherDuplicate.Setup(DataRef := _dataDuplicate, ResetData := TRUE);
+    _publisherDuplicate.M_DefineNode(Index := 1, Name := 'Master',
+        DescriptionKey := 'project.hardware.master', TypeId := 'Test',
+        Address := 'Master', ParentIndex := 0);
+    _publisherDuplicate.M_DefineDigitalChannel(NodeIndex := 1, ChannelIndex := 1,
+        Tag := '_DUPLICATE', DescriptionKey := 'project.io.first',
+        Address := 'Ch1', Path := 'Unit.IO.First', ModulePath := 'Unit',
+        Dir := E_ChannelDir.INPUT);
+    _publisherDuplicate.M_DefineDigitalChannel(NodeIndex := 1, ChannelIndex := 2,
+        Tag := '_DUPLICATE', DescriptionKey := 'project.io.second',
+        Address := 'Ch2', Path := 'Unit.IO.Second', ModulePath := 'Unit',
+        Dir := E_ChannelDir.INPUT);
+    _duplicateWired := TRUE;
+END_IF
+AssertFalse(Condition := _publisherDuplicate.M_Validate(),
+    Message := 'duplicate approved tag fails validation');
+AssertEquals_STRING(Expected := 'std.error.fieldbusChannelIdentityDuplicate',
+    Actual := _dataDuplicate.MappingDiagnostic,
+    Message := 'mapping failure is explicit and localizable');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

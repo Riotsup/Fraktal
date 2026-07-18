@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ConfigurableCylinderCM" Id="{c3e16fc2-6e30-4cd3-80f0-33f1b8e8a39e}" SpecialFunc="None">
+    <Declaration><![CDATA[// Production-grade basic pneumatic cylinder Control Module (Core §2.2 base) with
+// OPTIONAL and REDUNDANT position sensors (safety cylinders). Per position: 0..N
+// sensors; 0 = sensorless (time-based). 'Arrived' = ALL present sensors TRUE (AND,
+// safest); a persistent split of redundant sensors faults (discrepancy monitoring).
+// The type is ONLY its device logic; lifecycle/timing/first-out/abort are inherited.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_ConfigurableCylinderCM EXTENDS FB_ControlModuleBase
+VAR_INPUT
+    Command : E_ConfigurableCylinderCommand;
+    ParCfg : ST_ConfigurableCylinderParCfg;
+    ParCmd : ST_ConfigurableCylinderParCmd;
+END_VAR
+VAR_OUTPUT
+    OutCmd : ST_ConfigurableCylinderOutCmd;
+    OutImm : ST_ConfigurableCylinderOutImm;
+    Intlk  : FB_PermIntlk;
+END_VAR
+VAR
+    _hal     : REFERENCE TO ST_ConfigurableCylinderHal;
+    _recipe  : I_RecipeProvider;
+    _tMove   : TON;
+    _tSettle : TON;
+    _tDiscH  : TON;                             // home discrepancy timer
+    _tDiscW  : TON;                             // work discrepancy timer
+    _cfgOk   : BOOL;
+    _force   : BOOL;                            // SIM-only interlock force (§5.7)
+    _parCfgStaged : ST_ConfigurableCylinderParCfg;
+    _recipePrepared : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{1ce18f4c-b52b-437d-b65a-c5e2ced6daa1}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name   : STRING(80);
+    HalRef : REFERENCE TO ST_ConfigurableCylinderHal;
+    Recipe : I_RecipeProvider;
+END_VAR
+VAR
+    InitialModel : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'std.moduleType.configurableCylinder.name', DescriptionKey := 'std.moduleType.configurableCylinder.description');
+_M_PublishCommand(Value := TO_DINT(E_ConfigurableCylinderCommand.TO_HOME), Label := 'std.command.toHome');   // §7.6.1 catalog
+_M_PublishCommand(Value := TO_DINT(E_ConfigurableCylinderCommand.TO_WORK), Label := 'std.command.toWork');
+_hal REF= HalRef;                                        // [TC3] TC3 §3.11
+_recipe := Recipe;
+Intlk.Define(Index := 1, Description := 'project.interlock.areaSafe', Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+Setup := PrepareRecipe(Model := InitialModel);
+IF Setup THEN CommitRecipe(); END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{36ee2c40-632c-450b-813b-b576a477f8f4}">
+      <Declaration><![CDATA[METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_parCfgStaged := ParCfg;
+IF _recipe <> 0 THEN
+    IF NOT _recipe.Load(ModelCode := Model.ModelCode, RecipeKey := 'ConfigurableCylinderCM', pParCfg := ADR(_parCfgStaged), Size := SIZEOF(_parCfgStaged)) THEN
+        _M_Fault(E_Reason.RECIPE_INVALID, 'std.error.recipeSchemaInvalid');
+        PrepareRecipe := FALSE;
+        RETURN;
+    END_IF
+END_IF
+// counts within [0..MAX]; sensorless direction needs a usable travel time
+_cfgOk := (_parCfgStaged.HomeSensorCount >= 0) AND (_parCfgStaged.HomeSensorCount <= PL_Fraktal.MAX_POS_SENSORS)
+      AND (_parCfgStaged.WorkSensorCount >= 0) AND (_parCfgStaged.WorkSensorCount <= PL_Fraktal.MAX_POS_SENSORS)
+      AND (_parCfgStaged.TravelTime < _parCfgStaged.MoveTimeout)
+      AND ((_parCfgStaged.HomeSensorCount > 0) OR (_parCfgStaged.TravelTime > T#0S))
+      AND ((_parCfgStaged.WorkSensorCount > 0) OR (_parCfgStaged.TravelTime > T#0S));
+IF NOT _cfgOk THEN
+    _M_FaultN(PL_ModuleReasons.CYL_CFG_INVALID, 'std.error.cylinderConfigurationInvalid');
+    PrepareRecipe := FALSE;
+    RETURN;
+END_IF
+_recipePrepared := TRUE;
+PrepareRecipe := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{517fa4a2-24d8-418a-b2f3-eeb593a72fbf}">
+      <Declaration><![CDATA[METHOD CommitRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[IF _recipePrepared THEN ParCfg := _parCfgStaged; END_IF
+_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{4299144f-ac48-4640-8312-910202226510}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PosArrived" Id="{78cad707-bb6b-46df-a44e-561878b2e532}">
+      <Declaration><![CDATA[// TRUE iff EVERY wired sensor for the position reads TRUE (AND-combine, safest).
+// Count = 0 -> not sensor-decided (caller uses the time path).
+METHOD PROTECTED _M_PosArrived : BOOL
+VAR_INPUT
+    Work : BOOL;    // TRUE = work position, FALSE = home
+END_VAR
+VAR
+    i, n : INT;
+    all  : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n := SEL(Work, ParCfg.HomeSensorCount, ParCfg.WorkSensorCount);
+IF n <= 0 THEN
+    _M_PosArrived := FALSE;      // no sensors: caller must use the time-based path
+    RETURN;
+END_IF
+all := TRUE;
+FOR i := 1 TO n DO
+    IF Work THEN
+        IF NOT _hal.WorkFb[i] THEN all := FALSE; END_IF
+    ELSE
+        IF NOT _hal.HomeFb[i] THEN all := FALSE; END_IF
+    END_IF
+END_FOR
+_M_PosArrived := all;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PosSplit" Id="{83bb2f79-99be-4e2a-a6af-47e053c9af8e}">
+      <Declaration><![CDATA[// TRUE iff the position's redundant sensors DISAGREE (at least one TRUE and at
+// least one FALSE) — the discrepancy condition. Single/zero sensor => never split.
+METHOD PROTECTED _M_PosSplit : BOOL
+VAR_INPUT
+    Work : BOOL;
+END_VAR
+VAR
+    i, n : INT;
+    anyT, anyF : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n := SEL(Work, ParCfg.HomeSensorCount, ParCfg.WorkSensorCount);
+IF n < 2 THEN
+    _M_PosSplit := FALSE;
+    RETURN;
+END_IF
+FOR i := 1 TO n DO
+    IF Work THEN
+        IF _hal.WorkFb[i] THEN anyT := TRUE; ELSE anyF := TRUE; END_IF
+    ELSE
+        IF _hal.HomeFb[i] THEN anyT := TRUE; ELSE anyF := TRUE; END_IF
+    END_IF
+END_FOR
+_M_PosSplit := anyT AND anyF;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{a88ebd93-4417-4e5e-8bbf-21a59f37a907}">
+      <Declaration><![CDATA[// live position resolve + discrepancy monitoring (both positions, every scan)
+METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+Intlk.Cond[1] := NOT _force;
+Intlk();
+IF NOT __ISVALIDREF(_hal) THEN
+    RETURN;
+END_IF
+OutImm.AtHome := (ParCfg.HomeSensorCount > 0) AND _M_PosArrived(Work := FALSE);
+OutImm.AtWork := (ParCfg.WorkSensorCount > 0) AND _M_PosArrived(Work := TRUE);
+
+// discrepancy monitoring — a persistent split of redundant sensors is a fault
+_tDiscH(IN := _M_PosSplit(Work := FALSE), PT := ParCfg.DiscrepancyTime);
+_tDiscW(IN := _M_PosSplit(Work := TRUE),  PT := ParCfg.DiscrepancyTime);
+IF (_tDiscH.Q OR _tDiscW.Q) AND (_exec <> E_ExecState.ERROR) THEN
+    _M_FaultN(PL_ModuleReasons.CYL_DISCREPANCY, 'std.error.cylinderSensorDiscrepancy');
+END_IF
+
+// resolve position (AtHome/AtWork already AND-combined)
+IF OutImm.AtHome AND OutImm.AtWork THEN
+    OutImm.Position := E_CylinderPosition.UNKNOWN;
+ELSIF OutImm.AtHome THEN OutImm.Position := E_CylinderPosition.HOME;
+ELSIF OutImm.AtWork THEN OutImm.Position := E_CylinderPosition.WORK;
+ELSIF (ParCfg.HomeSensorCount > 0) OR (ParCfg.WorkSensorCount > 0) THEN OutImm.Position := E_CylinderPosition.MID;
+END_IF
+OutImm.Diagnostic := Status.Diagnostic;
+
+// both-positions-active plausibility while idle
+IF (_exec = E_ExecState.READY) AND OutImm.AtHome AND OutImm.AtWork THEN
+    _M_FaultN(PL_ModuleReasons.CYL_POS_IMPLAUSIBLE, 'std.error.cylinderPositionImplausible');
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnAbort" Id="{067d1478-c7cf-4a5c-b8cd-3111e38e7281}">
+      <Declaration><![CDATA[// §3.14.2 — fail-safe abort
+METHOD PROTECTED OnAbort : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnAbort := SUPER^.OnAbort();
+IF NOT __ISVALIDREF(_hal) THEN
+    RETURN;
+END_IF
+IF ParCfg.DeenergizeOnAbort THEN
+    _hal.ToWorkOut := FALSE;
+    _hal.ToHomeOut := FALSE;
+ELSIF ParCfg.SafePosOnAbort = E_CylinderPosition.WORK THEN
+    _hal.ToWorkOut := TRUE;  _hal.ToHomeOut := FALSE;
+ELSE
+    _hal.ToWorkOut := FALSE; _hal.ToHomeOut := NOT ParCfg.SingleActing;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SimForceInterlock" Id="{53cb9394-32e8-4893-b131-e25a7d946278}">
+      <Declaration><![CDATA[// §5.7 SIM-only
+METHOD SimForceInterlock : BOOL
+VAR_INPUT
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_force := NOT Ok;
+SimForceInterlock := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{ee37bbb6-46e7-4fe1-a54f-868b85f364fe}">
+      <Declaration><![CDATA[// drive -> await (all-sensors-agree, or time when sensorless) -> settle -> done
+METHOD PROTECTED _M_Dispatch
+VAR
+    toWork  : BOOL;
+    n       : INT;
+    arrived : BOOL;
+    d       : ST_Diagnostic;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _manualReq THEN
+    _manualReq := FALSE;                        // §7.6.1: apply the manual command value
+    Command := _manualCmd;                      // routed THROUGH dispatch — interlocks still apply
+END_IF
+IF (Command <> E_ConfigurableCylinderCommand.TO_HOME) AND (Command <> E_ConfigurableCylinderCommand.TO_WORK) THEN
+    _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedCylinderCommand');
+    RETURN;
+END_IF
+IF Command = E_ConfigurableCylinderCommand.TO_WORK THEN
+    _M_TagCommand(Id := 2, Label := 'std.command.toWork');
+    toWork := TRUE;
+ELSE
+    _M_TagCommand(Id := 1, Label := 'std.command.toHome');
+    toWork := FALSE;
+END_IF
+IF NOT Intlk.AllOk THEN
+    _hal.ToWorkOut := FALSE;
+    _hal.ToHomeOut := FALSE;
+    d := Intlk.Diagnostic;
+    d.SourcePath := _name;
+    _M_FaultDiag(d);
+    RETURN;
+END_IF
+n := SEL(toWork, ParCfg.HomeSensorCount, ParCfg.WorkSensorCount);   // sensors on the TARGET position
+CASE _step OF
+    10:
+        OutCmd.ReachedPosition := E_CylinderPosition.UNKNOWN;
+        _hal.ToWorkOut := toWork;
+        _hal.ToHomeOut := (NOT toWork) AND (NOT ParCfg.SingleActing);
+        _tMove(IN := FALSE);
+        _tSettle(IN := FALSE);
+        _step := 20;
+    20:  // await arrival
+        _tMove(IN := TRUE, PT := ParCfg.MoveTimeout);
+        IF n > 0 THEN
+            arrived := _M_PosArrived(Work := toWork);        // ALL sensors agree
+        ELSE
+            _tSettle(IN := TRUE, PT := ParCfg.TravelTime);      // sensorless -> travel time
+            arrived := _tSettle.Q;
+        END_IF
+        IF arrived THEN
+            _tSettle(IN := FALSE);
+            _step := 30;
+        ELSIF _tMove.Q THEN
+            _tMove(IN := FALSE);
+            _M_FaultN(SEL(toWork, PL_ModuleReasons.CYL_HOME_NOT_REACHED, PL_ModuleReasons.CYL_WORK_NOT_REACHED),
+                      SEL(toWork, 'std.error.cylinderHomeTimeout', 'std.error.cylinderWorkTimeout'));
+        END_IF
+    30:  // settle/debounce; re-confirm all sensors still agree
+        _tSettle(IN := TRUE, PT := ParCfg.SettleTime);
+        IF n <= 0 THEN
+            OutCmd.ReachedPosition := SEL(toWork, E_CylinderPosition.HOME, E_CylinderPosition.WORK);
+            _M_Complete();
+        ELSIF _M_PosArrived(Work := toWork) THEN
+            IF _tSettle.Q THEN
+                OutCmd.ReachedPosition := SEL(toWork, E_CylinderPosition.HOME, E_CylinderPosition.WORK);
+                _M_Complete();
+            END_IF
+        ELSE
+            _tSettle(IN := FALSE);
+            _step := 20;                                     // lost agreement; keep waiting in MoveTimeout
+        END_IF
+ELSE
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="AtPos" Id="{536f7d39-423f-440f-8e41-614bce371f56}">
+      <Declaration><![CDATA[PROPERTY AtPos : E_CylinderPosition]]></Declaration>
+      <Get Name="Get" Id="{568f5501-efb5-4c20-a93f-7dda139fc5d3}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[AtPos := OutImm.Position;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="_M_PublishStatus" Id="{84fb4c12-3755-42a1-8592-089482f37f93}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

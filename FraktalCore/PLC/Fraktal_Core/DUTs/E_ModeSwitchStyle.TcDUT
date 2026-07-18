@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ModeSwitchStyle" Id="{fee69738-f27a-4327-bf60-f999ded95b3e}">
+    <Declaration><![CDATA[// Core §3.4.1 — how the switch completes once permitted.
+{attribute 'qualified_only'}
+TYPE E_ModeSwitchStyle : (GRACEFUL := 0, IMMEDIATE := 1) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

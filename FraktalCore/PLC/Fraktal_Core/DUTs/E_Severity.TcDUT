@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_Severity" Id="{aa2bade8-8aba-47c4-9592-169d23cb71e5}">
+    <Declaration><![CDATA[// Core §8.1
+{attribute 'qualified_only'}
+TYPE E_Severity : (LOW := 0, MED := 1, HIGH := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

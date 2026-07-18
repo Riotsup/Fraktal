@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ClampEM" Id="{e8301e44-2305-4b19-bb4d-de4bef182a83}" SpecialFunc="None">
+    <Declaration><![CDATA[// Annex B on the EM base: orchestration only, no device logic (§3.5); rollup §8.2.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_ClampEM EXTENDS FB_EquipmentModuleBase
+VAR_INPUT
+    Command : E_ClampCommand;
+    ParCfg : ST_ClampParCfg;
+    ParCmd : ST_ClampParCmd;
+END_VAR
+VAR_OUTPUT
+    CylA, CylB : FB_CylinderCM;
+    OutCmd : ST_ClampOutCmd;
+    OutImm : ST_ClampOutImm;
+END_VAR
+VAR
+    _recipe : I_RecipeProvider;
+    _tSettle : TON;
+    _parCfgStaged : ST_ClampParCfg;
+    _recipePrepared : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="OnCyclic" Id="{efba7c7a-378d-4bad-a3fd-6d324d9955c4}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+_M_TickChildren();                       // children stay live (Annex B §B.3)
+OutImm.Diagnostic := Status.Diagnostic;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{b4844a4b-c4f2-4b09-b72d-51418c93c60a}">
+      <Declaration><![CDATA[METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _recipe = 0 THEN
+    _parCfgStaged := ParCfg;
+    _recipePrepared := TRUE;
+ELSIF _recipe.Load(ModelCode := Model.ModelCode, RecipeKey := 'ClampEM', pParCfg := ADR(_parCfgStaged), Size := SIZEOF(_parCfgStaged)) THEN
+    _recipePrepared := TRUE;
+ELSE
+    _M_Fault(E_Reason.RECIPE_INVALID, 'std.error.recipeSchemaInvalid');
+    _recipePrepared := FALSE;
+    PrepareRecipe := FALSE;
+    RETURN;
+END_IF
+PrepareRecipe := SUPER^.PrepareRecipe(Model := Model);
+IF NOT PrepareRecipe THEN _recipePrepared := FALSE; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{b4a60cf1-1ccf-44c9-85d7-12b304bd48b3}">
+      <Declaration><![CDATA[METHOD CommitRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^.CommitRecipe();
+IF _recipePrepared THEN ParCfg := _parCfgStaged; END_IF
+_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{60978bdc-09e8-4681-b06f-ef4db822dabc}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^.AbortRecipe();
+_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="Setup" Id="{d9d52a18-642e-4203-b5fc-5b3504d6d3a6}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    HalA : REFERENCE TO ST_CylinderHal;
+    HalB : REFERENCE TO ST_CylinderHal;
+    Recipe : I_RecipeProvider;
+END_VAR
+VAR
+    InitialModel : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'std.moduleType.clamp.name', DescriptionKey := 'std.moduleType.clamp.description');
+_recipe := Recipe;
+CylA.Setup(Name := CONCAT(Name, '.CylA'), HalRef := HalA, Recipe := Recipe);
+CylB.Setup(Name := CONCAT(Name, '.CylB'), HalRef := HalB, Recipe := Recipe);
+_M_Register(CylA);
+_M_Register(CylB);
+_M_PublishCommand(Value := TO_DINT(E_ClampCommand.CLAMP), Label := 'std.command.clamp');
+_M_PublishCommand(Value := TO_DINT(E_ClampCommand.UNCLAMP), Label := 'std.command.unclamp');
+Setup := PrepareRecipe(Model := InitialModel);
+IF Setup THEN CommitRecipe(); END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{c47dc574-5d61-434d-855d-f311dd843764}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch
+VAR
+    dir : E_CylinderCommand;
+    ext : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _manualReq THEN
+    _manualReq := FALSE;
+    IF (_manualCmd = TO_DINT(E_ClampCommand.CLAMP)) OR (_manualCmd = TO_DINT(E_ClampCommand.UNCLAMP)) THEN
+        Command := _manualCmd;
+    ELSE
+        _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedClampCommand');
+        RETURN;
+    END_IF
+END_IF
+IF (Command <> E_ClampCommand.CLAMP) AND (Command <> E_ClampCommand.UNCLAMP) THEN
+    _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedClampCommand');
+    RETURN;
+END_IF
+ext := (Command = E_ClampCommand.CLAMP);
+dir := SEL(ext, E_CylinderCommand.RETRACT, E_CylinderCommand.EXTEND);
+IF ext THEN
+    _M_TagCommand(Id := 1, Label := 'std.command.clamp');
+ELSE
+    _M_TagCommand(Id := 2, Label := 'std.command.unclamp');
+END_IF
+CASE _step OF
+    10:  // command both cylinders in parallel (Annex B)
+        OutCmd.Confirmed := FALSE;
+        CylA.Abort := FALSE;
+        CylB.Abort := FALSE;
+        CylA.Command := dir;
+        CylB.Command := dir;
+        CylA.Execute := TRUE;
+        CylB.Execute := TRUE;
+        _tSettle(IN := FALSE);
+        _step := 20;
+    20:  // join on both Done — or roll up the first child Error (§8.2)
+        IF CylA.Error OR CylB.Error THEN
+            _M_RollupFault();
+            CylA.Abort := TRUE;                    // stop the partner safely
+            CylB.Abort := TRUE;
+            CylA.Execute := FALSE;
+            CylB.Execute := FALSE;
+        ELSIF CylA.Done AND CylB.Done THEN
+            CylA.Execute := FALSE;
+            CylB.Execute := FALSE;
+            _step := 30;
+        END_IF
+    30:  // settle, then confirm both feedbacks held (EM-level check, Annex B)
+        _tSettle(IN := TRUE, PT := ParCfg.SettleTime);
+        IF _tSettle.Q THEN
+            _tSettle(IN := FALSE);
+            IF (ext AND CylA.OutImm.Extended AND CylB.OutImm.Extended)
+            OR ((NOT ext) AND CylA.OutImm.Retracted AND CylB.OutImm.Retracted) THEN
+                OutImm.Clamped   := ext;
+                OutImm.Unclamped := NOT ext;
+                OutCmd.Confirmed := TRUE;
+                _M_Complete();
+            ELSE
+                _M_FaultN(PL_ModuleReasons.CLAMP_NOT_CONFIRMED, 'project.error.clampNotConfirmedAfterSettle');
+            END_IF
+        END_IF
+ELSE
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{04c61bbc-5009-427c-b5e2-ff210893db72}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

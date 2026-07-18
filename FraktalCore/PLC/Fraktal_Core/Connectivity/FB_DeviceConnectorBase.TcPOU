@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_DeviceConnectorBase" Id="{e0d9c1eb-c30a-4f63-9773-8a61a02a0d31}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.15 written once: session + heartbeat + LinkTimeout loss confirm +
+// bounded exponential backoff reconnect + NO self-resume of dependents (that is
+// the fronting CM's contract). A transport implements only _M_Open/_M_Close/
+// _M_HbStart/_M_HbPoll. Row T7 of §5.7 is proven here once.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK ABSTRACT FB_DeviceConnectorBase IMPLEMENTS I_DeviceConnector
+VAR_INPUT
+    HbPeriod    : TIME := T#1S;
+    LinkTimeout : TIME := T#3S;
+    BackoffMin  : TIME := T#500MS;
+    BackoffMax  : TIME := T#10S;
+    Reaction    : E_LinkReaction := E_LinkReaction.HOLD;   // consumed by the fronting CM
+END_VAR
+VAR
+    _name      : STRING(80);
+    _sessionUp : BOOL;
+    _linked    : BOOL;
+    _hbBusy    : BOOL;
+    _lastSeen  : DT;
+    _diag      : ST_Diagnostic;
+    _tHb, _tLoss, _tBk : TON;
+    _backoffMs : DINT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="Connect" Id="{fd799149-bc20-4e65-b650-784e16072a3c}">
+      <Declaration><![CDATA[METHOD Connect : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Connect := _M_TryOpen();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Cyclic" Id="{488cde58-d949-41f0-ad59-e3270460a633}">
+      <Declaration><![CDATA[METHOD Cyclic : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT _sessionUp THEN
+    // bounded exponential backoff (§3.15) — never a tight reconnect loop
+    _tBk(IN := TRUE, PT := DINT_TO_TIME(_backoffMs));
+    IF _tBk.Q THEN
+        _tBk(IN := FALSE);
+        IF NOT _M_TryOpen() THEN
+            _backoffMs := MIN(_backoffMs * 2, TIME_TO_DINT(BackoffMax));
+        END_IF
+    END_IF
+    Cyclic := TRUE;
+    RETURN;
+END_IF
+// heartbeat: issue when due, poll while busy
+IF NOT _hbBusy THEN
+    _tHb(IN := TRUE, PT := HbPeriod);
+    IF _tHb.Q THEN
+        _tHb(IN := FALSE);
+        _hbBusy := _M_HbStart();
+    END_IF
+ELSE
+    CASE _M_HbPoll() OF
+        E_HbResult.OK:
+            _hbBusy := FALSE;
+            _linked := TRUE;
+            _lastSeen := F_Now();                 // §2.7
+            _diag.ReasonCode := E_Reason.NONE;
+            _diag.Description := '';
+            _tLoss(IN := FALSE);                  // healthy beat resets loss confirm
+        E_HbResult.FAIL:
+            _hbBusy := FALSE;
+            _M_Lost(E_Reason.DEVICE_PROTOCOL_ERROR, 'std.error.heartbeatBadReply');
+            Cyclic := TRUE;
+            RETURN;
+        E_HbResult.PENDING:
+            ;                                      // request still in flight
+    ELSE
+        _hbBusy := FALSE;
+        _M_Lost(E_Reason.DEVICE_PROTOCOL_ERROR, 'std.error.heartbeatResultInvalid');
+        Cyclic := TRUE;
+        RETURN;
+    END_CASE
+END_IF
+// confirm loss only after LinkTimeout without a healthy beat (§3.15.2)
+_tLoss(IN := TRUE, PT := LinkTimeout);
+IF _tLoss.Q THEN
+    _M_Lost(E_Reason.LINK_TIMEOUT, 'std.error.heartbeatLapsed');
+END_IF
+Cyclic := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Disconnect" Id="{5365b2c8-66c9-4b40-bb86-5c3c6d6a81d8}">
+      <Declaration><![CDATA[METHOD Disconnect : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_Close();
+_sessionUp := FALSE;
+_linked := FALSE;
+Disconnect := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="GetFaultSummary" Id="{a45fc429-cb2b-4a66-a99a-b971db5e3aba}">
+      <Declaration><![CDATA[METHOD GetFaultSummary : ST_Diagnostic]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[GetFaultSummary := _diag;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{b15ee465-6506-4174-9db2-0bac41dc2d63}">
+      <Declaration><![CDATA[METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PrepareRecipe := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{b68b62a8-24e5-425d-8586-ded5cfa52d70}">
+      <Declaration><![CDATA[METHOD CommitRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{e6376413-9650-47e7-9a25-b3b59790c425}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[]]></ST></Implementation>
+    </Method>
+    <Method Name="Setup" Id="{c004ed02-9636-4255-a0a0-e4bb0ac2a47c}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_name := Name;
+_backoffMs := TIME_TO_DINT(BackoffMin);
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Close" Id="{88021369-d0ca-496c-8e2f-0b5870ae06bf}">
+      <Declaration><![CDATA[METHOD PROTECTED ABSTRACT _M_Close : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_HbPoll" Id="{06e1248d-2e27-490c-8bd9-58564349e625}">
+      <Declaration><![CDATA[// PENDING while in flight; OK resets loss confirm; FAIL = protocol error
+METHOD PROTECTED ABSTRACT _M_HbPoll : E_HbResult]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_HbStart" Id="{d66c7d48-3779-418d-93da-28101d5b368c}">
+      <Declaration><![CDATA[METHOD PROTECTED ABSTRACT _M_HbStart : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Lost" Id="{43400447-79e0-4d09-9592-3fa9b1907181}">
+      <Declaration><![CDATA[// stamp the link first-out, drop the session; reconnection is backoff-bounded,
+// resumption of dependent commands is NEVER automatic (§3.15/§9.3)
+METHOD PROTECTED _M_Lost
+VAR_INPUT
+    Reason : E_Reason;
+    Text   : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _diag.ReasonCode <> Reason THEN
+    _diag.Since := F_Now();
+END_IF
+_diag.ReasonCode  := Reason;
+_diag.Description := Text;
+_diag.SourcePath  := _name;
+_diag.Severity    := E_Severity.MED;
+_diag.Category    := E_Category.SYSTEM;
+_linked := FALSE;
+_hbBusy := FALSE;
+_M_Close();
+_sessionUp := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Open" Id="{aee7524f-ae6e-4e52-b61f-346ca05afb1a}">
+      <Declaration><![CDATA[METHOD PROTECTED ABSTRACT _M_Open : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TryOpen" Id="{1d4dadd0-0182-4f3e-88f3-62abb38f5919}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_TryOpen : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _M_Open() THEN
+    _sessionUp := TRUE;
+    _backoffMs := TIME_TO_DINT(BackoffMin);
+    _M_TryOpen := TRUE;
+ELSE
+    _M_TryOpen := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="FaultActive" Id="{864c9b9f-1c34-4a23-9681-0ec73e99a39d}">
+      <Declaration><![CDATA[PROPERTY FaultActive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{bedb93c5-56d3-45c3-be70-6b0210219ad0}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[FaultActive := (NOT _linked) AND (_diag.ReasonCode <> E_Reason.NONE);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="LastSeen" Id="{98e731ce-f39b-4189-b536-85073c076d73}">
+      <Declaration><![CDATA[PROPERTY LastSeen : DT]]></Declaration>
+      <Get Name="Get" Id="{c239a64e-3017-4da9-8fb9-983e6dc1dacd}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[LastSeen := _lastSeen;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Linked" Id="{ca68580a-a1d2-4576-bc5a-32c322a2bfc1}">
+      <Declaration><![CDATA[PROPERTY Linked : BOOL]]></Declaration>
+      <Get Name="Get" Id="{93b21080-043d-478d-bc21-bc0616088e6b}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Linked := _linked;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="LinkReason" Id="{bfbf3c38-47f8-44e5-b0d7-74c6dd562a41}">
+      <Declaration><![CDATA[PROPERTY LinkReason : ST_Diagnostic]]></Declaration>
+      <Get Name="Get" Id="{bab1bed2-546a-4c94-9c20-ac4c1a6a193e}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[LinkReason := _diag;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ModuleType" Id="{a6f12bf4-420c-4337-a7cf-139e7f70834a}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{c5c33a54-4877-4ab6-adf3-03919fb6cca0}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ModuleType := E_ModuleType.CONTROL_MODULE;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Name" Id="{0b22fb19-d622-4bc2-a730-da94a7d246b3}">
+      <Declaration><![CDATA[PROPERTY Name : STRING(80)]]></Declaration>
+      <Get Name="Get" Id="{0908ee01-3dc6-4631-8ae9-b892e6e10a65}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Name := _name;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="State" Id="{27c0e29d-93ff-4698-a486-5e0ba1d17531}">
+      <Declaration><![CDATA[PROPERTY State : E_ExecState]]></Declaration>
+      <Get Name="Get" Id="{85a882be-bedd-4a5a-8b46-79e74017dfb4}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[State := SEL(FaultActive, E_ExecState.READY, E_ExecState.ERROR);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_SafetyState" Id="{94aef32b-f2ed-46b7-b7bd-512d16fccaf8}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_SafetyState : (UNAVAILABLE := 0, SAFE_STATE := 1, READY := 2,
+    DEMAND := 3, RESET_REQUIRED := 4, FAULT := 5) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

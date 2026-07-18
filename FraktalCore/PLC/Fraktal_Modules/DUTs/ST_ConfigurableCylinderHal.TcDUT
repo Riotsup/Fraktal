@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ConfigurableCylinderHal" Id="{81efb59d-ac82-462e-b577-44a664c64cf4}">
+    <Declaration><![CDATA[// Basic cylinder HAL with REDUNDANT position sensors (safety cylinders).
+// Each position has an array of sensors; only the first N (ParCfg.*SensorCount) are
+// used. N = 0 -> sensorless (time-based completion). 'Arrived' = ALL present
+// sensors TRUE (AND); a persistent split faults (discrepancy monitoring, §3.6.
+TYPE ST_ConfigurableCylinderHal :
+STRUCT
+    ToWorkOut : BOOL;   // solenoid: drive to work (extend)
+    ToHomeOut : BOOL;   // solenoid: drive to home (retract); single-acting leaves FALSE
+    HomeFb    : ARRAY[1..PL_Fraktal.MAX_POS_SENSORS] OF BOOL;   // redundant home sensors
+    WorkFb    : ARRAY[1..PL_Fraktal.MAX_POS_SENSORS] OF BOOL;   // redundant work sensors
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_FieldbusLossReaction" Id="{1da4a24c-8373-4200-b8a1-811f252270d4}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_FieldbusLossReaction : (ALARM_ONLY := 0, STOP_UNIT := 1,
+    POWER_GROUP_OFF := 2, CONTROL_OFF := 3) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

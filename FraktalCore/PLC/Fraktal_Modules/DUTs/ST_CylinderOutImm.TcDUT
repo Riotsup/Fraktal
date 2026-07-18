@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_CylinderOutImm" Id="{8da48b38-10e3-4657-979c-b936d4787c8a}">
+    <Declaration><![CDATA[TYPE ST_CylinderOutImm :
+STRUCT
+    Extended   : BOOL;
+    Retracted  : BOOL;
+    ExtendedSensorTag : STRING(80);
+    RetractedSensorTag: STRING(80);
+    ExtendOutputTag   : STRING(80);
+    RetractOutputTag  : STRING(80);
+    Diagnostic : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

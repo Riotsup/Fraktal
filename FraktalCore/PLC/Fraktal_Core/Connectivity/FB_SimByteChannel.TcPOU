@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_SimByteChannel" Id="{506a089a-1efa-4473-b5c2-0cac9b515c70}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.15.1a — scripted in-memory channel: device CMs are TcUnit-tested
+// end-to-end with NO socket and NO vendor hardware. Script(Expect, Reply):
+// when a sent line matches Expect, Reply is delivered on the next Poll.
+FUNCTION_BLOCK FB_SimByteChannel IMPLEMENTS I_ByteChannel
+VAR_INPUT
+    SwallowNext : BOOL;               // eat the next request (drives timeout tests)
+END_VAR
+VAR
+    _state  : E_ByteChannelState;
+    _expect : ARRAY[1..8] OF STRING(255);
+    _reply  : ARRAY[1..8] OF STRING(255);
+    _n      : INT;
+    _pend   : STRING(255);            // reply awaiting delivery
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[; // driven via Tick/methods]]></ST>
+    </Implementation>
+    <Method Name="Script" Id="{f0341554-91c1-4cfa-8774-c06ab56c47cb}">
+      <Declaration><![CDATA[METHOD Script : BOOL
+VAR_INPUT
+    Expect : STRING(255);
+    Reply  : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _n >= 8 THEN
+    Script := FALSE;
+    RETURN;
+END_IF
+_n := _n + 1;
+_expect[_n] := Expect;
+_reply[_n] := Reply;
+Script := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Open" Id="{83b54460-5107-4ba5-ab57-537abb486b6c}">
+      <Declaration><![CDATA[METHOD Open : BOOL
+VAR_INPUT
+    Host : STRING(80);
+    Port : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_state := E_ByteChannelState.OPEN;   // sim opens instantly
+Open := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Close" Id="{22823e1d-a09d-46c6-b858-843c9432a4f9}">
+      <Declaration><![CDATA[METHOD Close : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_state := E_ByteChannelState.CLOSED;
+Close := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Send" Id="{9e395b38-e2ce-4190-9c56-12f3307b7f76}">
+      <Declaration><![CDATA[METHOD Send : BOOL
+VAR_INPUT
+    Text : STRING(255);
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _state <> E_ByteChannelState.OPEN THEN
+    Send := FALSE;
+    RETURN;
+END_IF
+IF SwallowNext THEN
+    SwallowNext := FALSE;             // request eaten: no reply -> caller times out
+    Send := TRUE;
+    RETURN;
+END_IF
+FOR i := 1 TO _n DO
+    IF _expect[i] = Text THEN
+        _pend := _reply[i];
+        EXIT;
+    END_IF
+END_FOR
+Send := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Poll" Id="{1bde0600-7e77-4be0-a2cc-bc5d930dd824}">
+      <Declaration><![CDATA[METHOD Poll : INT
+VAR_IN_OUT
+    Buffer : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Poll := 0;
+IF _pend <> '' THEN
+    Poll := LEN(_pend);
+    Buffer := CONCAT(Buffer, _pend);
+    _pend := '';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="State" Id="{86ca94aa-c0be-40e3-869b-cf9d283615af}">
+      <Declaration><![CDATA[METHOD State : E_ByteChannelState]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State := _state;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Tick" Id="{2f5c015c-da9b-4400-bd7e-5264a6c11143}">
+      <Declaration><![CDATA[METHOD Tick : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Tick := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

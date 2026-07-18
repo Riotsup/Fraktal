@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_PowerGroupOutImm" Id="{c972c0cb-3543-4263-a319-8d76a582a386}">
+    <Declaration><![CDATA[TYPE ST_PowerGroupOutImm :
+STRUCT
+    Status     : ST_PowerGroupStatus;
+    Diagnostic : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

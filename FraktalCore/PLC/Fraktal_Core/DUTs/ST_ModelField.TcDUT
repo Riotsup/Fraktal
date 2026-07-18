@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ModelField" Id="{a1c7be5c-9477-42ca-b899-bfddb5108f64}">
+    <Declaration><![CDATA[// Core §3.8a — one client-defined named model field
+TYPE ST_ModelField : STRUCT  Name : STRING(32);  Value : STRING(64);  END_STRUCT END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

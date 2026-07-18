@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_CycleProfile" Id="{4ee1374d-cbf3-469f-9438-273247c18354}">
+    <Declaration><![CDATA[// Core §8.11.4(b)/(f) — one completed cycle: ordered waterfall + time-class split.
+// ByClass is indexed by TO_INT(E_TimeClass): 0=WORK 1=WAIT_UPSTREAM 2=WAIT_DOWNSTREAM
+// 3=WAIT_OPERATOR 4=WAIT_EXTERNAL.
+TYPE ST_CycleProfile :
+STRUCT
+    CycleNo   : UDINT;
+    Started   : DT;
+    Total     : TIME;     // reconciles with the §8.11.1 CycleTime
+    WorkTime  : TIME;     // §8.11.4(f): THE REAL CYCLE TIME (= ByClass[WORK])
+    WaitTime  : TIME;     // Total - WorkTime (all wait classes)
+    ByClass   : ARRAY[0..4] OF TIME;
+    NSteps    : INT;
+    Truncated : BOOL;     // more step changes than MAX_PROFILE_STEPS
+    Steps     : ARRAY[1..PL_Fraktal.MAX_PROFILE_STEPS] OF ST_StepTiming;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

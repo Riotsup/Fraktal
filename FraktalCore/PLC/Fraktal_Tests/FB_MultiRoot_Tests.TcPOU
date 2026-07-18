@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_MultiRoot_Tests" Id="{944c5ecd-c686-484f-851c-21f529db7aae}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.1a/§3.1b — a program with TWO root Units running DIFFERENT models at once.
+FUNCTION_BLOCK FB_MultiRoot_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    StationA : FB_ProbeUnit;      // root 1
+    StationB : FB_ProbeUnit;      // root 2 (peer, no shared super-root)
+    idA, idB : ST_ModelId;
+    _w : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Two_roots_hold_independent_models();]]></ST>
+    </Implementation>
+    <Method Name="Two_roots_hold_independent_models" Id="{d829f9aa-3127-4300-931c-f4bfda1258a0}">
+      <Declaration><![CDATA[METHOD Two_roots_hold_independent_models]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Two_roots_hold_independent_models');
+IF NOT _w THEN
+    StationA.Setup('StationA');
+    StationB.Setup('StationB');
+    idA.ModelCode := 'MODEL-A';
+    idB.ModelCode := 'MODEL-B';
+    _w := TRUE;
+END_IF
+AssertTrue(Condition := StationA.SetModel(Id := idA), Message := 'root A accepts its model');
+AssertTrue(Condition := StationB.SetModel(Id := idB), Message := 'root B accepts its model');
+// MAIN ticks each root every scan — peers, no shared parent
+StationA();
+StationB();
+AssertEquals_STRING(Expected := 'MODEL-A', Actual := StationA.ModelCode,
+                    Message := 'root A carries MODEL-A');
+AssertEquals_STRING(Expected := 'MODEL-B', Actual := StationB.ModelCode,
+                    Message := 'root B carries MODEL-B AT THE SAME TIME (3.1b)');
+// each root has its own independent rollup/state
+AssertFalse(Condition := StationA.FaultActive AND StationB.FaultActive,
+            Message := 'roots are independent peers');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

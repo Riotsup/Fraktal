@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressDemoUnit_Tests" Id="{8bc3c82c-6d67-42a1-b976-6a86edb6693f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PressDemoUnit_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    Press : FB_PressDemoUnit;
+    PressHal, DoorHal, SlideHal : ST_CylinderHal;
+    TwoHandHal : ST_TwoHandHal;
+    PowerHal : ST_PowerGroupHal;
+    PartPresentHal : ST_DigitalInputHal;
+    AirPressureHal : ST_AirPressureHal;
+    PressSim, DoorSim, SlideSim : FB_CylinderSim;
+    Recipe : FB_LocalRecipeProvider;
+    Fast, Slow : ST_PneumaticPressParCfg;
+    SlowModel : ST_ModelId;
+    Domain : ST_ControlDomainStatus;
+    Release : ST_ReleaseReport;
+    Wired : BOOL;
+    i : INT;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[IF NOT Wired THEN
+    Fast.PressSettleTime := T#0S; Fast.TransferSettleTime := T#0S;
+    Fast.IdealCycleMs := 1000; Fast.BaselineWorkMs := 900;
+    Slow.PressSettleTime := T#1200MS; Slow.TransferSettleTime := T#100MS;
+    Slow.IdealCycleMs := 2500; Slow.BaselineWorkMs := 2200;
+    Recipe.Register(ModelCode := '', RecipeKey := 'PneumaticPressUnit', pData := ADR(Fast), Size := SIZEOF(Fast));
+    Recipe.Register(ModelCode := 'STEEL', RecipeKey := 'PneumaticPressUnit', pData := ADR(Slow), Size := SIZEOF(Slow));
+    PressHal.RetractedFb := TRUE; DoorHal.RetractedFb := TRUE; SlideHal.RetractedFb := TRUE;
+    Press.Setup(Name := 'Test.Press', PressHal := PressHal, DoorHal := DoorHal,
+        SlideHal := SlideHal, TwoHandHal := TwoHandHal, PowerHal := PowerHal,
+        PartPresentHal := PartPresentHal, AirPressureHal := AirPressureHal, Recipe := Recipe);
+    PressSim.Setup(HalRef := PressHal, TravelTime := T#0S);
+    DoorSim.Setup(HalRef := DoorHal, TravelTime := T#0S);
+    SlideSim.Setup(HalRef := SlideHal, TravelTime := T#0S);
+    PowerHal.SafetyPermit := TRUE; PowerHal.FieldbusHealthy := TRUE; PowerHal.PowerFeedback := TRUE;
+    TwoHandHal.FieldbusHealthy := TRUE;
+    PartPresentHal.Quality := TRUE; AirPressureHal.Quality := TRUE;
+    Domain.Present := TRUE; Domain.Id := 'TEST-PRESS'; Domain.ReadyForStart := TRUE;
+    Domain.Safety.Present := TRUE; Domain.Safety.AllSafe := TRUE;
+    Domain.ControlPower.Present := TRUE; Domain.ControlPower.ControlOn := TRUE;
+    Press.ControlDomain := Domain;
+    PartPresentHal.Value := TRUE;
+    AirPressureHal.LowPressure := FALSE; AirPressureHal.OperatingPressure := TRUE;
+    Wired := TRUE;
+END_IF
+Model_changeover_is_transactional();
+Start_release_enforces_operating_air();
+Home_and_changeover_sequences_are_explicit();
+Auto_cycle_returns_to_load_position();]]></ST></Implementation>
+    <Method Name="Model_changeover_is_transactional" Id="{33fd4a76-f8fa-47a1-8eb1-0d6309b714bd}">
+      <Declaration><![CDATA[METHOD Model_changeover_is_transactional]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Model_changeover_is_transactional');
+SlowModel.ModelCode := 'STEEL';
+AssertTrue(Condition := Press.SetModel(Id := SlowModel), Message := 'stopped Unit accepts model changeover');
+AssertTrue(Condition := Press.ParCfg.PressSettleTime = T#1200MS,
+    Message := 'model-specific press dwell committed atomically');
+AssertTrue(Condition := Press.Profiler.BaselineWorkMs = 2200,
+    Message := 'model-specific profiler baseline committed through its owner API');
+SlowModel.ModelCode := '';
+AssertTrue(Condition := Press.SetModel(Id := SlowModel), Message := 'fallback recipe restores fast test model');
+AssertTrue(Condition := Press.ParCfg.PressSettleTime = T#0S, Message := 'fallback recipe active');
+AssertTrue(Condition := Press.Profiler.BaselineWorkMs = 900,
+    Message := 'fallback profiler baseline follows the committed recipe');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Start_release_enforces_operating_air" Id="{b2a53c75-f53b-48c2-84df-b3d681fa70dd}">
+      <Declaration><![CDATA[// Press example of Core T10: an immediate mode-entry permissive is both
+// explainable and enforced. Part/two-hand remain future AUTO step conditions.
+METHOD Start_release_enforces_operating_air]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Start_release_enforces_operating_air');
+AssertTrue(Condition := Press.SetMode(Mode := E_Mode.AUTO), Message := 'AUTO selected for release test');
+Press();
+AirPressureHal.LowPressure := TRUE;
+AirPressureHal.OperatingPressure := FALSE;
+Press();
+Press.ReleaseReportStart(Report := Release);
+AssertFalse(Condition := Release.Released, Message := 'operating-air permissive is reported');
+AssertFalse(Condition := Press.ReleaseConditions.ModeStartAirPressureOk,
+    Message := 'project release component exposes the failed named condition');
+AssertTrue(Condition := Release.Count >= 1, Message := 'release report names the failed condition');
+AssertEquals_STRING(Expected := 'Test.Press', Actual := Release.Reasons[1].SourcePath,
+    Message := 'release report retains press Unit ownership');
+AssertFalse(Condition := Press.Start(), Message := 'reported operating-air permissive blocks Start');
+
+AirPressureHal.LowPressure := FALSE;
+AirPressureHal.OperatingPressure := TRUE;
+Press();
+Press.ReleaseReportStart(Report := Release);
+AssertTrue(Condition := Release.Released, Message := 'release clears with operating air');
+AssertTrue(Condition := Press.ReleaseConditions.ModeStartAirPressureOk,
+    Message := 'project release component exposes the cleared named condition');
+AssertTrue(Condition := Press.Start(), Message := 'Start accepts when the authoritative report releases');
+Press.Stop();
+Press();
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Home_and_changeover_sequences_are_explicit" Id="{4812f863-e0cc-4253-ad83-89a0e7fa277a}">
+      <Declaration><![CDATA[METHOD Home_and_changeover_sequences_are_explicit]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Home_and_changeover_sequences_are_explicit');
+AssertTrue(Condition := Press.SetMode(Mode := E_Mode.HOME), Message := 'HOME is advertised');
+Press();
+AssertTrue(Condition := Press.Start(), Message := 'HOME starts through Unit lifecycle');
+FOR i := 1 TO 20 DO
+    PressSim(); DoorSim(); SlideSim(); Press();
+END_FOR
+AssertTrue(Condition := Press.OutCmd.Homed, Message := 'HOME establishes load-safe position');
+Press.Stop(); Press();
+
+AssertTrue(Condition := Press.SetMode(Mode := E_Mode.CHANGEOVER), Message := 'CHANGEOVER is advertised');
+Press();
+SlowModel.ModelCode := 'STEEL';
+AssertTrue(Condition := Press.SetModel(Id := SlowModel), Message := 'selected recipe loads transactionally');
+AssertTrue(Condition := Press.Start(), Message := 'guided CHANGEOVER starts');
+FOR i := 1 TO 30 DO
+    PressSim(); DoorSim(); SlideSim(); Press();
+    IF Press.Decision.Prompt <> '' THEN Press.DecisionAnswer := 1; END_IF
+END_FOR
+AssertTrue(Condition := Press.OutCmd.ChangeoverCompleted,
+    Message := 'CHANGEOVER completes only after operator confirmation');
+AssertTrue(Condition := Press.Model.ModelCode = 'STEEL', Message := 'active model is published');
+Press.Stop(); Press();
+AssertTrue(Condition := Press.SetMode(Mode := E_Mode.AUTO), Message := 'AUTO remains available');
+Press();
+SlowModel.ModelCode := '';
+AssertTrue(Condition := Press.SetModel(Id := SlowModel), Message := 'fast test recipe restored');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Auto_cycle_returns_to_load_position" Id="{ed45e11e-0021-487d-9180-3e59a59af237}">
+      <Declaration><![CDATA[METHOD Auto_cycle_returns_to_load_position]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Auto_cycle_returns_to_load_position');
+PartPresentHal.Value := FALSE;
+AirPressureHal.LowPressure := TRUE; AirPressureHal.OperatingPressure := FALSE;
+TwoHandHal.LeftPressed := FALSE; TwoHandHal.RightPressed := FALSE; TwoHandHal.SafeActive := FALSE;
+Press();
+TwoHandHal.LeftPressed := TRUE; TwoHandHal.RightPressed := TRUE; TwoHandHal.SafeActive := TRUE;
+Press();
+AssertTrue(Condition := Press.State = E_ExecState.READY,
+    Message := 'two-hand edge is not cached without part and operating air');
+TwoHandHal.LeftPressed := FALSE; TwoHandHal.RightPressed := FALSE; TwoHandHal.SafeActive := FALSE;
+PartPresentHal.Value := TRUE;
+AirPressureHal.LowPressure := FALSE; AirPressureHal.OperatingPressure := TRUE;
+Press();
+TwoHandHal.LeftPressed := TRUE; TwoHandHal.RightPressed := TRUE; TwoHandHal.SafeActive := TRUE;
+FOR i := 1 TO 80 DO
+    PressSim(); DoorSim(); SlideSim(); Press();
+END_FOR
+AssertTrue(Condition := Press.GoodCount > 0, Message := 'AUTO cycle records a good part');
+AssertTrue(Condition := PressHal.RetractedFb, Message := 'ram returns up');
+AssertTrue(Condition := DoorHal.RetractedFb, Message := 'door returns open');
+AssertTrue(Condition := SlideHal.RetractedFb, Message := 'slide returns outside for unloading');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

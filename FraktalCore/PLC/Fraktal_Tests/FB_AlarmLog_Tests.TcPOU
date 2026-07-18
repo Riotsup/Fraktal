@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AlarmLog_Tests" Id="{c4e949d7-9ef5-468e-8e84-968791b19366}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.3 under test: AUTO closes with Duration; MANUAL blocks until OperatorReset;
+// the Unit auto-captures faults and refuses Start while blocking; ring browsable.
+FUNCTION_BLOCK FB_AlarmLog_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _log : FB_AlarmLog;
+    _u   : FB_ProbeUnit;
+    _s   : INT;
+    _d   : ST_Diagnostic;
+    _w   : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Auto_reset_closes_with_duration();
+Manual_reset_blocks_until_operator();
+Diagnostic_io_identity_is_preserved();
+Unit_fault_captured_and_start_blocked();]]></ST>
+    </Implementation>
+    <Method Name="Auto_reset_closes_with_duration" Id="{eab67d97-c2ab-4cb5-a0cf-8234b46b133a}">
+      <Declaration><![CDATA[METHOD Auto_reset_closes_with_duration]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Auto_reset_closes_with_duration');
+_s := _log.Raise(Reason := E_Reason.PERMISSIVE_NOT_MET,
+                 Text := 'Air low', Source := 'Test.Unit', Severity := E_Severity.LOW,
+                 Category := E_Category.PROCESS, ResetClass := E_ResetClass.AUTO_RESET);
+AssertTrue(Condition := _s > 0, Message := 'event opened');
+AssertEquals_INT(Expected := 1, Actual := _log.NActive, Message := 'active while condition holds');
+AssertFalse(Condition := _log.Blocking, Message := 'AUTO_RESET never blocks (8.3b)');
+_log.Gone(Slot := _s);
+AssertEquals_INT(Expected := 0, Actual := _log.NActive, Message := 'auto event closed on gone');
+AssertEquals_DINT(Expected := TO_DINT(E_AlarmState.CLOSED),
+                  Actual   := TO_DINT(_log.Ring[_log.RingHead].State),
+                  Message  := 'closed event browsable in the ring (8.3d)');
+AssertEquals_DWORD(Expected := TO_DWORD(E_Reason.PERMISSIVE_NOT_MET),
+                   Actual   := TO_DWORD(_log.Ring[_log.RingHead].ReasonCode),
+                   Message  := 'ring keeps the reason vocabulary (8.8)');
+AssertTrue(Condition := _log.Ring[_log.RingHead].Duration >= T#0S,
+           Message := 'Duration recorded at gone (8.3a)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Diagnostic_io_identity_is_preserved" Id="{ebdca7f3-05c5-4522-b018-f4187a4b450a}">
+      <Declaration><![CDATA[METHOD Diagnostic_io_identity_is_preserved]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Diagnostic_io_identity_is_preserved');
+_d.ReasonCode := PL_ModuleReasons.CYL_NOT_EXTENDED;
+_d.Description := 'project.error.pressDownSensorTimeout';
+_d.SourcePath := 'PneumaticPress.PressRam';
+_d.IoTag := '_101B202A';
+_d.IoAddress := 'EL1809 Ch5';
+_d.Severity := E_Severity.MED;
+_d.Category := E_Category.PROCESS;
+_s := _log.RaiseDiag(D := _d, ResetClass := E_ResetClass.AUTO_RESET);
+AssertEquals_STRING(Expected := '_101B202A', Actual := _log.Active[_s].IoTag,
+    Message := 'alarm lifecycle keeps the diagnostic electrical tag');
+AssertEquals_STRING(Expected := 'EL1809 Ch5', Actual := _log.Active[_s].IoAddress,
+    Message := 'alarm lifecycle keeps the terminal channel locator');
+_log.Gone(Slot := _s);
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Manual_reset_blocks_until_operator" Id="{b0ccd005-a861-4856-b9df-9d7f70ee9cbc}">
+      <Declaration><![CDATA[METHOD Manual_reset_blocks_until_operator]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Manual_reset_blocks_until_operator');
+_s := _log.Raise(Reason := E_Reason.TIMEOUT,
+                 Text := 'Move timeout', Source := 'Test.Unit.Cyl', Severity := E_Severity.MED,
+                 Category := E_Category.PROCESS, ResetClass := E_ResetClass.MANUAL_RESET);
+AssertTrue(Condition := _log.Blocking, Message := 'MANUAL_RESET blocks while active');
+_log.Gone(Slot := _s);                              // condition re-established...
+AssertTrue(Condition := _log.Blocking,
+           Message := '...but STILL blocking: never self-closes (8.3b/9.3)');
+AssertEquals_DINT(Expected := TO_DINT(E_AlarmState.WAIT_RESET),
+                  Actual   := TO_DINT(_log.Active[_s].State),
+                  Message  := 'WAIT_RESET until the operator');
+AssertTrue(Condition := _log.OperatorReset(), Message := 'operator reset closes it');
+AssertFalse(Condition := _log.Blocking, Message := 'unblocked after deliberate reset');
+AssertEquals_INT(Expected := 0, Actual := _log.NActive, Message := 'no active events remain');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Unit_fault_captured_and_start_blocked" Id="{b783f20f-500b-497c-a02b-e3863882ef53}">
+      <Declaration><![CDATA[METHOD Unit_fault_captured_and_start_blocked]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Unit_fault_captured_and_start_blocked');
+IF NOT _w THEN
+    _u.Setup('Test.AlarmUnit');
+    _w := TRUE;
+END_IF
+_u.SimFault := TRUE;
+AssertTrue(Condition := _u.Start(), Message := 'starts clean');
+_u();                                                // dispatch raises the forced fault
+_u();                                                // Unit base captures it into AlarmLog
+AssertEquals_INT(Expected := 1, Actual := _u.AlarmLog.NActive,
+                 Message := 'ERROR entry is captured automatically (8.3c)');
+AssertFalse(Condition := _u.Start(),
+            Message := 'Start refused while a MANUAL_RESET event is open (8.3b)');
+_u.SimFault := FALSE;
+_u.Stop();                                            // drop the terminal run Execute
+_u(); _u();                                          // READY, then event -> WAIT_RESET
+AssertTrue(Condition := _u.OperatorReset(), Message := 'operator closes WAIT_RESET');
+AssertTrue(Condition := _u.Start(), Message := 'Start allowed after gone + operator reset');
+_u.Stop();
+_u.SimA := TRUE;
+_u.SimB := TRUE;
+_u(); _u(); _u(); _u();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

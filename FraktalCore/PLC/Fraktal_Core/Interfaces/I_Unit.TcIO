@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_Unit" Id="{56f8e326-9652-44d6-99ad-209c17c54fb1}">
+    <Declaration><![CDATA[// Core §3.2 — mode-owning tier
+INTERFACE I_Unit EXTENDS I_Module]]></Declaration>
+    <Method Name="SetMode" Id="{1850af08-05eb-4d64-bf31-bd4d675af7f1}">
+      <Declaration><![CDATA[// returns FALSE if the mode is unsupported (Core §3.4/§3.7)
+METHOD SetMode : BOOL
+VAR_INPUT
+    Mode : E_Mode;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="Start" Id="{f4a59e7d-7b6e-4823-b688-3476eb7f4837}">
+      <Declaration><![CDATA[METHOD Start : BOOL]]></Declaration>
+    </Method>
+    <Method Name="Stop" Id="{865b3ce6-e6ca-4ffd-b5ff-824e466f1faa}">
+      <Declaration><![CDATA[METHOD Stop : BOOL]]></Declaration>
+    </Method>
+    <Property Name="ModeActive" Id="{782480ff-9568-4b91-8c2c-49385932ba56}">
+      <Declaration><![CDATA[PROPERTY ModeActive : E_Mode]]></Declaration>
+      <Get Name="Get" Id="{4991877b-06bb-4b1c-b592-37f012f61d1b}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

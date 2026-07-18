@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AlarmLog" Id="{06ba6158-d080-4052-abcf-dcfa4ae613a0}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.3 — per-Unit alarm & event log: active list + closed ring, durations,
+// AUTO/MANUAL reset classes, optional historian sink. Fixed-size, never allocates.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_AlarmLog
+VAR_OUTPUT
+    Active    : ARRAY[1..PL_Fraktal.MAX_ALARM_ACTIVE] OF ST_AlarmEvent;  // ACTIVE/WAIT_RESET
+    NActive   : INT;
+    Ring      : ARRAY[1..PL_Fraktal.MAX_ALARM_RING] OF ST_AlarmEvent;    // closed, newest at RingHead
+    RingHead  : INT;
+    Blocking  : BOOL;    // any MANUAL_RESET event ACTIVE/WAIT_RESET (§8.3(b))
+    Truncated : BOOL;
+    Meta      : ARRAY[1..PL_Fraktal.MAX_ALARM_META] OF ST_AlarmMeta;  // §8.9 rationalization
+    MetaCount : INT;
+END_VAR
+VAR
+    _sink    : I_EventSink;
+    _comeMs  : ARRAY[1..PL_Fraktal.MAX_ALARM_ACTIVE] OF DWORD;   // monotonic (TC3 §8.11)
+    _shelfMs : ARRAY[1..PL_Fraktal.MAX_ALARM_ACTIVE] OF UDINT;   // §8.10 countdown (0 = not shelved)
+    _cycLast : TIME;                                             // Cyclic delta stamp
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// event-driven; no cyclic body]]></ST>
+    </Implementation>
+    <Method Name="Raise" Id="{e5aff592-14dd-4648-be92-103d3f17c391}">
+      <Declaration><![CDATA[// §8.3(c) — open a non-channel-specific event; returns slot (0 = full).
+METHOD Raise : INT
+VAR_INPUT
+    Reason : E_Reason;
+    Text : STRING(255);
+    Source : STRING(255);
+    Severity : E_Severity;
+    Category : E_Category;
+    ResetClass : E_ResetClass;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[Raise := _M_Raise(Reason := Reason, Text := Text, Source := Source,
+    IoTag := '', IoAddress := '', Severity := Severity, Category := Category,
+    ResetClass := ResetClass);]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Raise" Id="{45f44f2f-eaad-442e-828d-da7d72ecfc17}">
+      <Declaration><![CDATA[// §8.3(c) — open an event; returns its slot id (0 = table full -> Truncated)
+METHOD PRIVATE _M_Raise : INT
+VAR_INPUT
+    Reason : E_Reason;
+    Text : STRING(255);
+    Source : STRING(255);
+    IoTag : STRING(80);
+    IoAddress : STRING(80);
+    Severity : E_Severity;
+    Category : E_Category;
+    ResetClass : E_ResetClass;
+END_VAR
+VAR
+    i, slot : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[slot := 0;
+FOR i := 1 TO PL_Fraktal.MAX_ALARM_ACTIVE DO
+    IF Active[i].State = E_AlarmState.CLOSED THEN
+        slot := i;
+        EXIT;
+    END_IF
+END_FOR
+IF slot = 0 THEN
+    Truncated := TRUE;
+    _M_Raise := 0;
+    RETURN;
+END_IF
+Active[slot].ReasonCode  := Reason;
+Active[slot].Description := Text;
+Active[slot].SourcePath  := Source;
+Active[slot].IoTag       := IoTag;
+Active[slot].IoAddress   := IoAddress;
+Active[slot].Severity    := Severity;
+Active[slot].Category    := Category;
+Active[slot].ResetClass  := ResetClass;
+Active[slot].State       := E_AlarmState.ACTIVE;
+Active[slot].ComeAt      := F_Now();
+Active[slot].GoneAt      := DT#1970-01-01-00:00:00;
+Active[slot].ResetAt     := DT#1970-01-01-00:00:00;
+Active[slot].Duration    := T#0S;
+Active[slot].Shelved     := FALSE;
+Active[slot].ShelvedUntil:= DT#1970-01-01-00:00:00;
+_shelfMs[slot] := 0;
+_comeMs[slot] := TIME_TO_DWORD(TIME());
+NActive := NActive + 1;
+_M_UpdateBlocking();
+IF _sink <> 0 THEN
+    _sink.OnEvent(Ev := Active[slot]);              // come notification (§8.3(d))
+END_IF
+_M_Raise := slot;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="RaiseDiag" Id="{a3ee5630-fe6c-47e4-8bc2-cc7268aa803d}">
+      <Declaration><![CDATA[// §8.3(c) — open an ERROR event straight from a first-out diagnostic (no re-authoring)
+METHOD RaiseDiag : INT
+VAR_INPUT
+    D : ST_Diagnostic;
+    ResetClass : E_ResetClass;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[RaiseDiag := _M_Raise(Reason := D.ReasonCode, Text := D.Description,
+                   Source := D.SourcePath, IoTag := D.IoTag, IoAddress := D.IoAddress,
+                   Severity := D.Severity, Category := D.Category,
+                   ResetClass := ResetClass);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Gone" Id="{de607ee8-02ca-4fcf-a55f-750276cd8505}">
+      <Declaration><![CDATA[// §8.3(b) — condition re-established: AUTO_RESET closes with Duration;
+// MANUAL_RESET stays blocking in WAIT_RESET until OperatorReset.
+METHOD Gone : BOOL
+VAR_INPUT
+    Slot : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Gone := FALSE;
+IF (Slot < 1) OR (Slot > PL_Fraktal.MAX_ALARM_ACTIVE) THEN
+    RETURN;
+END_IF
+IF Active[Slot].State <> E_AlarmState.ACTIVE THEN
+    RETURN;
+END_IF
+Active[Slot].GoneAt   := F_Now();
+Active[Slot].Duration := DWORD_TO_TIME(TIME_TO_DWORD(TIME()) - _comeMs[Slot]);   // wrap-safe
+IF Active[Slot].ResetClass = E_ResetClass.AUTO_RESET THEN
+    _M_Close(Slot);
+ELSE
+    Active[Slot].State := E_AlarmState.WAIT_RESET;   // still blocking (§8.3(b))
+END_IF
+Gone := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OperatorReset" Id="{82dbc752-0f42-4a97-bca7-ed5e7058b4ed}">
+      <Declaration><![CDATA[// §8.3(b) — deliberate, release-gated operator action (§7.6/§14): closes
+// MANUAL_RESET events whose condition is gone. NEVER self-invoked (§9.3 principle).
+METHOD OperatorReset : BOOL
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OperatorReset := FALSE;
+FOR i := 1 TO PL_Fraktal.MAX_ALARM_ACTIVE DO
+    IF Active[i].State = E_AlarmState.WAIT_RESET THEN
+        Active[i].ResetAt := F_Now();
+        _M_Close(i);
+        OperatorReset := TRUE;
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetSink" Id="{1a7e4f41-1939-4e34-bba5-1316ef532f9c}">
+      <Declaration><![CDATA[METHOD SetSink : BOOL
+VAR_INPUT
+    Sink : I_EventSink;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_sink := Sink;
+SetSink := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Close" Id="{5344cc1d-8a1a-48c9-887a-a87868d85498}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Close
+VAR_INPUT
+    Slot : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Active[Slot].State := E_AlarmState.CLOSED;
+RingHead := (RingHead MOD PL_Fraktal.MAX_ALARM_RING) + 1;
+Ring[RingHead] := Active[Slot];
+Ring[RingHead].State := E_AlarmState.CLOSED;
+NActive := NActive - 1;
+_M_UpdateBlocking();
+IF _sink <> 0 THEN
+    _sink.OnEvent(Ev := Ring[RingHead]);            // close notification with Duration (§8.3(d))
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_UpdateBlocking" Id="{1241856d-25f1-4375-b694-d8f80bfc79bc}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_UpdateBlocking
+VAR
+    i : INT;
+    b : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[b := FALSE;
+FOR i := 1 TO PL_Fraktal.MAX_ALARM_ACTIVE DO
+    IF (Active[i].ResetClass = E_ResetClass.MANUAL_RESET)
+    AND (Active[i].State <> E_AlarmState.CLOSED) THEN
+        b := TRUE;
+        EXIT;
+    END_IF
+END_FOR
+Blocking := b;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="RegisterMeta" Id="{348460f8-b6f5-4322-9ed8-695da3e196b8}">
+      <Declaration><![CDATA[// §8.9 — register/update the rationalization record for a ReasonCode (idempotent).
+// Modules/Units call at Setup. No record => the reason is NOT shelvable (§8.10).
+METHOD RegisterMeta : BOOL
+VAR_INPUT
+    Reason         : E_Reason;
+    OperatorAction : STRING(255);
+    Consequence    : STRING(255);
+    Shelvable      : BOOL;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[FOR i := 1 TO MetaCount DO
+    IF Meta[i].ReasonCode = Reason THEN
+        Meta[i].OperatorAction := OperatorAction;
+        Meta[i].Consequence := Consequence;
+        Meta[i].Shelvable := Shelvable;
+        RegisterMeta := TRUE;
+        RETURN;
+    END_IF
+END_FOR
+IF MetaCount >= PL_Fraktal.MAX_ALARM_META THEN
+    RegisterMeta := FALSE;
+    RETURN;
+END_IF
+MetaCount := MetaCount + 1;
+Meta[MetaCount].ReasonCode := Reason;
+Meta[MetaCount].OperatorAction := OperatorAction;
+Meta[MetaCount].Consequence := Consequence;
+Meta[MetaCount].Shelvable := Shelvable;
+RegisterMeta := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Shelvable" Id="{52f81fea-4f28-4973-abca-b231c01b560c}">
+      <Declaration><![CDATA[// §8.10 — may this active slot be shelved? SAFETY never; no meta record => no.
+METHOD PROTECTED _M_Shelvable : BOOL
+VAR_INPUT
+    Slot : INT;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Shelvable := FALSE;
+IF Slot < 1 OR Slot > PL_Fraktal.MAX_ALARM_ACTIVE THEN
+    RETURN;
+END_IF
+IF Active[Slot].State = E_AlarmState.CLOSED THEN
+    RETURN;
+END_IF
+IF Active[Slot].Category = E_Category.SAFETY THEN
+    RETURN;                              // §8.10: safety never shelvable
+END_IF
+FOR i := 1 TO MetaCount DO
+    IF Meta[i].ReasonCode = Active[Slot].ReasonCode THEN
+        _M_Shelvable := Meta[i].Shelvable;
+        RETURN;
+    END_IF
+END_FOR
+// no rationalization record => not shelvable (rationalize first, §8.10)]]></ST></Implementation>
+    </Method>
+    <Method Name="Shelve" Id="{86f0e903-3257-4f3f-83b4-b0af5eafbd7b}">
+      <Declaration><![CDATA[// §8.10 — suppress ANNUNCIATION of an active alarm for DurationS seconds (capped).
+// Control is untouched: Blocking, interlocks, release reports all still see it.
+// Caller has already checked §7.7 ALARM_SHELVE; the shelf itself is logged here.
+METHOD Shelve : BOOL
+VAR_INPUT
+    Slot      : INT;
+    DurationS : UDINT;
+END_VAR
+VAR
+    auditSlot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT _M_Shelvable(Slot := Slot) THEN
+    Shelve := FALSE;
+    RETURN;
+END_IF
+IF DurationS = 0 THEN
+    Shelve := FALSE;                              // every shelf is time-bounded
+    RETURN;
+END_IF
+IF DurationS > PL_Fraktal.MAX_SHELF_S THEN
+    DurationS := PL_Fraktal.MAX_SHELF_S;         // §8.10 time-bounded
+END_IF
+Active[Slot].Shelved := TRUE;
+Active[Slot].ShelvedUntil := DWORD_TO_DT(DT_TO_DWORD(F_Now()) + DurationS);
+_shelfMs[Slot] := DurationS * 1000;
+auditSlot := Raise(Reason := E_Reason.NONE,
+    Text := 'std.audit.alarmShelved', Source := Active[Slot].SourcePath,
+    Severity := E_Severity.LOW, Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+IF auditSlot > 0 THEN Gone(Slot := auditSlot); END_IF
+Shelve := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="Unshelve" Id="{6f5bb5b8-2b34-48d9-831a-5184c247bbc1}">
+      <Declaration><![CDATA[// §8.10 — restore annunciation (operator or auto-expiry). Logged.
+METHOD Unshelve : BOOL
+VAR_INPUT
+    Slot : INT;
+END_VAR
+VAR
+    auditSlot : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF Slot < 1 OR Slot > PL_Fraktal.MAX_ALARM_ACTIVE THEN
+    Unshelve := FALSE;
+    RETURN;
+END_IF
+IF NOT Active[Slot].Shelved THEN
+    Unshelve := FALSE;
+    RETURN;
+END_IF
+Active[Slot].Shelved := FALSE;
+_shelfMs[Slot] := 0;
+auditSlot := Raise(Reason := E_Reason.NONE,
+    Text := 'std.audit.alarmUnshelved', Source := Active[Slot].SourcePath,
+    Severity := E_Severity.LOW, Category := E_Category.SYSTEM, ResetClass := E_ResetClass.AUTO_RESET);
+IF auditSlot > 0 THEN Gone(Slot := auditSlot); END_IF
+Unshelve := TRUE;]]></ST></Implementation>
+    </Method>
+    <Method Name="Cyclic" Id="{25d58d63-f379-4b3f-8ea6-c9e0fa8f9336}">
+      <Declaration><![CDATA[// §8.10 — auto-unshelve countdown (owning Unit ticks this each scan).
+METHOD Cyclic : BOOL
+VAR
+    currentTime : TIME;
+    deltaMs     : UDINT;
+    i   : INT;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[currentTime := TIME();                 // monotonic duration clock
+IF _cycLast = T#0S THEN
+    _cycLast := currentTime;
+    Cyclic := TRUE;
+    RETURN;
+END_IF
+deltaMs := TIME_TO_UDINT(currentTime) - TIME_TO_UDINT(_cycLast);
+_cycLast := currentTime;
+FOR i := 1 TO PL_Fraktal.MAX_ALARM_ACTIVE DO
+    IF Active[i].Shelved AND _shelfMs[i] > 0 THEN
+        IF _shelfMs[i] > deltaMs THEN
+            _shelfMs[i] := _shelfMs[i] - deltaMs;
+        ELSE
+            _shelfMs[i] := 0;
+            Unshelve(Slot := i);                 // §8.10 auto-expire (logged by Unshelve)
+        END_IF
+    END_IF
+END_FOR
+Cyclic := TRUE;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ManualCmd_Tests" Id="{9d740e35-3541-43a3-a646-2636ab1b011c}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §7.6.1: manual command rejected unless owning Unit is in MANUAL; accepted
+// with MANUAL mode; catalog published by the module. Uses the probe Unit which
+// overrides _M_RouteManual to a FB_ConfigurableCylinderCM child.
+FUNCTION_BLOCK FB_ManualCmd_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _u : FB_ProbeUnitManual;
+    _w : BOOL;
+    _i : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _u.Setup('Test.ManUnit');
+    _u();
+    _w := TRUE;
+END_IF
+Catalog_published();
+Rejected_when_not_manual();
+Accepted_in_manual_runs_lifecycle();
+Unsupported_value_rejected();]]></ST>
+    </Implementation>
+    <Method Name="Catalog_published" Id="{0022ea66-2ef5-4d78-8b5a-f3520efbdada}">
+      <Declaration><![CDATA[METHOD Catalog_published]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Catalog_published');
+AssertTrue(Condition := _u.Cyl.CatalogCount >= 2, Message := 'cylinder publishes To Home/To Work (§7.6.1)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Rejected_when_not_manual" Id="{9f70c1bd-5853-45d5-ad00-521475d3cc04}">
+      <Declaration><![CDATA[METHOD Rejected_when_not_manual]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Rejected_when_not_manual');
+_u.SetMode(Mode := E_Mode.AUTO);
+_u();
+AssertFalse(Condition := _u.ManualCommandTo(TargetPath := 'Test.ManUnit.Cyl', Value := 2),
+            Message := 'manual cmd rejected when Unit not in MANUAL (§7.6.1 single path)');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Accepted_in_manual_runs_lifecycle" Id="{7a7c9b81-5d8d-4c6a-a80e-502dc65176ee}">
+      <Declaration><![CDATA[METHOD Accepted_in_manual_runs_lifecycle]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Accepted_in_manual_runs_lifecycle');
+_u.SetMode(Mode := E_Mode.MANUAL);
+_u();
+_u.SetAir(Ok := TRUE);
+AssertTrue(Condition := _u.ManualCommandTo(TargetPath := 'Test.ManUnit.Cyl', Value := 2),
+           Message := 'accepted in MANUAL with open access');
+_u();
+AssertTrue(Condition := _u.Cyl.Busy, Message := 'manual command enters inherited PLCopen lifecycle');
+AssertTrue(Condition := _u.Hal.ToWorkOut, Message := 'accepted command reaches defended device logic');
+_u.TestSetCylinderAbort(Value := TRUE);
+_u(); _u();
+_u.TestSetCylinderAbort(Value := FALSE);
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Unsupported_value_rejected" Id="{4dc86d5d-1eaf-4ed6-b39e-8a3c2a40294e}">
+      <Declaration><![CDATA[METHOD Unsupported_value_rejected]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Unsupported_value_rejected');
+AssertFalse(Condition := _u.ManualCommandTo(TargetPath := 'Test.ManUnit.Cyl', Value := 999),
+            Message := 'unpublished manual command is rejected at the module boundary (5.6)');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

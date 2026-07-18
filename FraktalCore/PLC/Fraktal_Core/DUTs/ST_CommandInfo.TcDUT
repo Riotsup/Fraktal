@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_CommandInfo" Id="{7459688a-0141-4ac1-acd0-9dbdaf13809b}">
+    <Declaration><![CDATA[// Core §7.6.1 — one entry in a module's self-describing command catalog.
+// Value is what ExecuteCommand accepts (§3.2); Label is the button text.
+TYPE ST_CommandInfo :
+STRUCT
+    Value : DINT;
+    Label : STRING(120);   // localization key; resolved by the HMI catalog
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

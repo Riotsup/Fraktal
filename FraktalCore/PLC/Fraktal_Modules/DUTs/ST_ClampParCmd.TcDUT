@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ClampParCmd" Id="{6c1a359a-6147-437c-86a4-e72e172f9d15}">
+    <Declaration><![CDATA[TYPE ST_ClampParCmd :
+STRUCT
+    Reserved : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

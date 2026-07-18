@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_UserRecord" Id="{224b60fd-3441-4d16-98a8-4792000f9df1}">
+    <Declaration><![CDATA[// Core §7.7(c) — FB_LocalAccessProvider table entry (local default; server-side
+// auth substitutes via I_AccessProvider without touching module code)
+TYPE ST_UserRecord :
+STRUCT
+    User  : STRING(32);
+    Pin   : STRING(32);
+    Level : E_AccessLevel;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

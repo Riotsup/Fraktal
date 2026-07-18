@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_CycleProfiler" Id="{608a9e32-b7e9-415e-ac92-7eedc3a3eab0}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.11.4(b)/(f) — the cycle-time profile, fed by the step record the chain
+// already keeps for §6.9: StepChanged() from _M_SetStep (with the step's time class,
+// WORK by default), CycleComplete() at the finish step (§8.11.1 marker). Application
+// steps add NOTHING except one enum on genuine wait steps. The step-chain / Unit
+// base (M2) calls both automatically; until then a Unit wires the two calls once
+// (Annex C §C.6). Fixed-size, no runtime allocation (Core §8.11.4(e)).
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_CycleProfiler
+VAR_OUTPUT
+    Current        : ST_CycleProfile;   // cycle in progress (live waterfall)
+    LastCycle      : ST_CycleProfile;   // last completed cycle — the HMI chart source
+    StepStats      : ARRAY[1..PL_Fraktal.MAX_PROFILE_STEPS] OF ST_TimingRow;  // per-StepNo aggregates
+    StatsTruncated : BOOL;
+    // §8.11.1 throughput markers + §8.11.4 trend ring (the cycle-time ANALYSIS source:
+    // per-cycle work/wait-class totals, charted by the HMI to explain increases)
+    LastCycleTime  : TIME;
+    MinCycleTime   : TIME;              // rolling minimum since reset (the demonstrated best)
+    History        : ARRAY[1..PL_Fraktal.MAX_CYCLE_HISTORY] OF ST_CycleSummary;
+    HistoryHead    : INT;               // newest entry (0 = none yet)
+    // §8.11.4(d) — degradation is data: WorkTime drifting beyond Baseline*(1+BandPct)
+    // pulses DegradedTrig for ONE call so the owner raises the maintenance event once.
+    BaselineWorkMs : UDINT;             // 0 = degradation watch off (§3.8 config)
+    DegradedBandPct: UDINT := 20;       // allowed drift above baseline, percent
+    DegradedTrig   : BOOL;
+    DegradedWorkMs : UDINT;             // the WorkTime that tripped the band (for the event text)
+END_VAR
+VAR
+    _running      : BOOL;
+    _openNo       : INT;
+    _openName     : STRING(80);
+    _openClass    : E_TimeClass;
+    _openExpected : TIME;
+    _openStartMs  : DWORD;
+    _openStartDt  : DT;
+    _cycleStartMs : DWORD;
+    _degraded     : BOOL;               // latched: one event per excursion, not per cycle
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// no cyclic body — event-driven via StepChanged/CycleComplete]]></ST>
+    </Implementation>
+    <Method Name="CycleComplete" Id="{1aa8cf72-5b7a-46a1-86ce-455a1cbe9c6e}">
+      <Declaration><![CDATA[// close the open step and publish the cycle (call at the finish step, §8.11.1).
+// Publishes WorkTime = ByClass[WORK] — the real cycle time (§8.11.4(f)).
+METHOD CycleComplete : BOOL
+VAR
+    nowMs : DWORD;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT _running THEN
+    CycleComplete := FALSE;
+    RETURN;
+END_IF
+nowMs := TIME_TO_DWORD(TIME());
+_M_CloseOpen(nowMs);
+Current.Total    := DWORD_TO_TIME(nowMs - _cycleStartMs);   // wrap-safe (TC3 §8.11)
+Current.WorkTime := Current.ByClass[TO_INT(E_TimeClass.WORK)];
+Current.WaitTime := Current.Total - Current.WorkTime;
+Current.CycleNo  := LastCycle.CycleNo + 1;
+LastCycle := Current;
+
+// §8.11.1 throughput markers
+LastCycleTime := Current.Total;
+IF (MinCycleTime = T#0S) OR (Current.Total < MinCycleTime) THEN
+    MinCycleTime := Current.Total;
+END_IF
+
+// §8.11.4 trend ring — per-cycle class split for the HMI's cause analysis
+HistoryHead := (HistoryHead MOD PL_Fraktal.MAX_CYCLE_HISTORY) + 1;
+History[HistoryHead].CycleNo  := Current.CycleNo;
+History[HistoryHead].Started  := Current.Started;
+History[HistoryHead].Total    := Current.Total;
+History[HistoryHead].WorkTime := Current.WorkTime;
+History[HistoryHead].WaitTime := Current.WaitTime;
+History[HistoryHead].ByClass  := Current.ByClass;
+
+// §8.11.4(d) — degradation watch on WORK time (waits are attributed, not drift).
+// One-call trigger, latched per excursion; recovery below the band rearms it.
+DegradedTrig := FALSE;
+DegradedWorkMs := TIME_TO_DWORD(Current.WorkTime);
+IF BaselineWorkMs > 0 THEN
+    IF DegradedWorkMs * 100 > BaselineWorkMs * (100 + DegradedBandPct) THEN
+        IF NOT _degraded THEN
+            _degraded := TRUE;
+            DegradedTrig := TRUE;
+        END_IF
+    ELSE
+        _degraded := FALSE;
+    END_IF
+END_IF
+
+_running := FALSE;
+_openNo  := 0;
+CycleComplete := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CycleAbandon" Id="{3fd0a8b2-61c5-4e94-870d-2ab4f9c17e56}">
+      <Declaration><![CDATA[// §8.11.1 — discard the OPEN cycle without publishing it: a stop accepted at the
+// between-cycles wait must not count a wait-only fragment as a production cycle
+// (it would poison MinCycleTime and the trend). Aggregates keep completed cycles.
+METHOD CycleAbandon : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_running := FALSE;
+_openNo := 0;
+CycleAbandon := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ResetStats" Id="{0fca3c86-e522-45fe-afb7-83c92d10bbb3}">
+      <Declaration><![CDATA[// deliberate, LOGGED action only (Core §8.11.2) — the caller raises the event
+METHOD ResetStats : BOOL
+VAR
+    i     : INT;
+    empty : ST_TimingRow;
+    emptySummary : ST_CycleSummary;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i := 1 TO PL_Fraktal.MAX_PROFILE_STEPS DO
+    StepStats[i] := empty;
+END_FOR
+FOR i := 1 TO PL_Fraktal.MAX_CYCLE_HISTORY DO
+    History[i] := emptySummary;
+END_FOR
+HistoryHead := 0;
+LastCycleTime := T#0S;
+MinCycleTime := T#0S;
+_degraded := FALSE;
+StatsTruncated := FALSE;
+LastCycle.CycleNo := 0;
+ResetStats := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetBaselineWork" Id="{1aadef85-4ad7-4858-856c-6aa1fff5d337}">
+      <Declaration><![CDATA[// Configure the recipe-owned WORK-time reference through the profiler owner.
+// BaselineWorkMs is published read-only; TwinCAT therefore rejects assignment
+// through a parent FB's published Profiler output. Zero disables the watch.
+METHOD M_SetBaselineWork : BOOL
+VAR_INPUT
+    WorkMs : UDINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[BaselineWorkMs := WorkMs;
+DegradedTrig := FALSE;
+_degraded := FALSE;
+M_SetBaselineWork := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="StepChanged" Id="{dc9838c0-b244-4232-854f-c72c8b07ae7b}">
+      <Declaration><![CDATA[// call on every step change — _M_SetStep already has StepNo/StepName (§6.5).
+// Class defaults to WORK; only genuine wait steps pass a wait class (§8.11.4(f)).
+METHOD StepChanged : BOOL
+VAR_INPUT
+    StepNo   : INT;
+    StepName : STRING(120);
+    Class    : E_TimeClass;
+    Expected : TIME;                   // §8.11.4(c) — declared guard, drawn vs actual
+END_VAR
+VAR
+    nowMs : DWORD;
+    i     : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _running AND (StepNo = _openNo) THEN
+    _openClass := Class;               // same step refreshed — class may be (re)declared
+    _openExpected := Expected;
+    StepChanged := TRUE;
+    RETURN;
+END_IF
+nowMs := TIME_TO_DWORD(TIME());
+IF NOT _running THEN
+    _running := TRUE;                  // first step opens the cycle (§8.11.1 start marker)
+    _cycleStartMs := nowMs;
+    Current.Started   := F_Now();
+    Current.NSteps    := 0;
+    Current.Truncated := FALSE;
+    FOR i := 0 TO 4 DO
+        Current.ByClass[i] := T#0S;    // reset the class split for the new cycle
+    END_FOR
+ELSE
+    _M_CloseOpen(nowMs);
+END_IF
+_openNo      := StepNo;
+_openName    := StepName;
+_openClass   := Class;
+_openExpected := Expected;
+_openStartMs := nowMs;
+_openStartDt := F_Now();
+StepChanged := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CloseOpen" Id="{7284fa08-e2e5-4168-bcaa-81d25c9531dd}">
+      <Declaration><![CDATA[// fold the open step into the profile, the class split, and the aggregates
+METHOD PRIVATE _M_CloseOpen
+VAR_INPUT
+    NowMs : DWORD;
+END_VAR
+VAR
+    dur  : DWORD;
+    i    : INT;
+    slot : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _openNo = 0 THEN
+    RETURN;
+END_IF
+dur := NowMs - _openStartMs;                                // wrap-safe (TC3 §8.11)
+
+// (1) ordered waterfall entry
+IF Current.NSteps < PL_Fraktal.MAX_PROFILE_STEPS THEN
+    Current.NSteps := Current.NSteps + 1;
+    Current.Steps[Current.NSteps].StepNo   := _openNo;
+    Current.Steps[Current.NSteps].StepName := _openName;
+    Current.Steps[Current.NSteps].Class    := _openClass;
+    Current.Steps[Current.NSteps].Started  := _openStartDt;
+    Current.Steps[Current.NSteps].Duration := DWORD_TO_TIME(dur);
+    Current.Steps[Current.NSteps].Expected := _openExpected;
+ELSE
+    Current.Truncated := TRUE;
+END_IF
+
+// (2) time-class split (§8.11.4(f)) — WorkTime/WaitTime derive from this at cycle close
+Current.ByClass[TO_INT(_openClass)] := Current.ByClass[TO_INT(_openClass)] + DWORD_TO_TIME(dur);
+
+// (3) per-StepNo aggregate (find-or-allocate; fixed array, Core §8.11.4(e))
+slot := 0;
+FOR i := 1 TO PL_Fraktal.MAX_PROFILE_STEPS DO
+    IF (StepStats[i].Count > 0) AND (StepStats[i].Id = _openNo) THEN
+        slot := i;
+        EXIT;
+    ELSIF (slot = 0) AND (StepStats[i].Count = 0) THEN
+        slot := i;
+    END_IF
+END_FOR
+IF slot = 0 THEN
+    StatsTruncated := TRUE;
+ELSE
+    StepStats[slot].Id    := _openNo;
+    StepStats[slot].Label := _openName;
+    StepStats[slot].Class := _openClass;
+    F_TimingUpdate(Row := StepStats[slot], DurMs := dur);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

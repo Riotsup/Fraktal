@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_CylinderParCfg" Id="{19a484f8-fe46-4cb6-a661-ff9a22a3cb34}">
+    <Declaration><![CDATA[// Core §3.8: SchemaVersion FIRST, initialized to the expected version
+TYPE ST_CylinderParCfg :
+STRUCT
+    SchemaVersion : UINT := 1;
+    MoveTimeout   : TIME := T#2S;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_Module" Id="{093c0a52-c980-4062-a17c-25dd858ed09c}">
+    <Declaration><![CDATA[// Core §3.2 — everything a parent needs to discover, monitor, and roll up a child.
+// Reconciliation vs. Core §3.2 text: no ErrorID property here (it would collide with
+// the PLCopen ErrorID output every module exposes, Core §6.1); callers read
+// GetFaultSummary().ReasonCode. GetFaultSummary returns ST_Diagnostic (Core §8.8),
+// Recipe changeover is a prepare/commit/abort transaction (Core §3.8).
+INTERFACE I_Module EXTENDS __System.IQueryInterface]]></Declaration>
+    <Method Name="Cyclic" Id="{c818cb62-1f70-48c9-922d-36339236ad4f}">
+      <Declaration><![CDATA[METHOD Cyclic : BOOL]]></Declaration>
+    </Method>
+    <Method Name="GetFaultSummary" Id="{a470f1ce-1b55-4e54-8257-f064ac6ab7fc}">
+      <Declaration><![CDATA[// recursive first-out walk (Core §8.2, §6.9)
+METHOD GetFaultSummary : ST_Diagnostic]]></Declaration>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{ba15086e-0fea-4a3e-a418-bf2250d67b37}">
+      <Declaration><![CDATA[// Load/validate into staging only; active ParCfg remains unchanged.
+METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="CommitRecipe" Id="{8f308ef8-16ca-4094-93fc-a0254e750c82}">
+      <Declaration><![CDATA[// Infallible bounded publication after a successful PrepareRecipe.
+METHOD CommitRecipe]]></Declaration>
+    </Method>
+    <Method Name="AbortRecipe" Id="{c41d7443-a096-4d7c-8c10-d7d75d242cd7}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+    </Method>
+    <Property Name="FaultActive" Id="{7d3925d9-5bf4-44be-b896-af20751f74b2}">
+      <Declaration><![CDATA[PROPERTY FaultActive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{1d9601d4-5aca-41f0-a728-3a69f848416e}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="ModuleType" Id="{ac6c319c-5aae-4fe6-bc9f-4ee75c635ca9}">
+      <Declaration><![CDATA[PROPERTY ModuleType : E_ModuleType]]></Declaration>
+      <Get Name="Get" Id="{f242de61-3732-4c9c-bfe0-d50ef731f0b4}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="Name" Id="{be513318-40b1-4681-b7ad-a3a27808bb40}">
+      <Declaration><![CDATA[PROPERTY Name : STRING(80)]]></Declaration>
+      <Get Name="Get" Id="{e6a12158-05d9-454d-81ee-e92a8686d294}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="State" Id="{349a58a1-0e42-43f1-9958-b3aaaac8049c}">
+      <Declaration><![CDATA[PROPERTY State : E_ExecState]]></Declaration>
+      <Get Name="Get" Id="{ad4db1ba-421d-4bcc-bcab-e520e1f229f0}">
+        <Declaration><![CDATA[VAR
+END_VAR]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

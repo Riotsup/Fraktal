@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_AlarmEvent" Id="{94e622a4-c371-46bf-ab83-3b3fbe290fd4}">
+    <Declaration><![CDATA[// Core §8.3(a) — one alarm/event with full lifecycle. Same reason vocabulary as
+// every diagnostic (§8.8): the event IS the diagnostic plus lifecycle.
+TYPE ST_AlarmEvent :
+STRUCT
+    ReasonCode  : E_Reason;
+    Description : STRING(255);
+    SourcePath  : STRING(255);   // module browse path (§4.8) = historian tag path
+    IoTag       : STRING(80);    // exact implicated electrical tag; untranslated
+    IoAddress   : STRING(80);    // terminal/channel locator
+    Severity    : E_Severity;
+    Category    : E_Category;
+    ResetClass  : E_ResetClass;
+    State       : E_AlarmState;
+    ComeAt      : DT;            // synchronized stamps (§2.7)
+    GoneAt      : DT;
+    ResetAt     : DT;            // MANUAL_RESET only
+    Duration    : TIME;          // monotonic come->gone (§8.11.4(e) two-clock rule)
+    Shelved     : BOOL;          // §8.10 annunciation suppressed (control unaffected)
+    ShelvedUntil: DT;            // display only; enforcement is the log's countdown
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

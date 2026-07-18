@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_CylinderCM" Id="{05f548d6-e819-40c3-b0bd-f2c5ee607509}" SpecialFunc="None">
+    <Declaration><![CDATA[// Annex A/B pattern on the base class: the type is ONLY its device logic.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_CylinderCM EXTENDS FB_ControlModuleBase
+VAR_INPUT
+    Command : E_CylinderCommand;
+    ParCfg : ST_CylinderParCfg;
+    ParCmd : ST_CylinderParCmd;
+END_VAR
+VAR_OUTPUT
+    OutCmd : ST_CylinderOutCmd;
+    OutImm : ST_CylinderOutImm;
+    Intlk  : FB_PermIntlk;
+END_VAR
+VAR
+    _hal    : REFERENCE TO ST_CylinderHal;
+    _recipe : I_RecipeProvider;
+    _tMove  : TON;
+    _force  : BOOL;                     // SIM hook — wrap in {IF defined (SIM_HOOKS)} for release (§5.7)
+    _parCfgStaged : ST_CylinderParCfg;
+    _recipePrepared : BOOL;
+    _directionPermitsConfigured : BOOL;
+    _extendPermit, _retractPermit : BOOL := TRUE;
+    _extendPermitKey, _retractPermitKey : STRING(255);
+    _extendedSensorTag, _retractedSensorTag : STRING(80);
+    _extendedSensorAddress, _retractedSensorAddress : STRING(80);
+    _extendOutputTag, _retractOutputTag : STRING(80);
+    _extendedTimeoutKey, _retractedTimeoutKey, _bothSensorsKey : STRING(255);
+    _bothSensorTags, _bothSensorAddresses : STRING(80);
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Cyclic();]]></ST>
+    </Implementation>
+    <Method Name="OnCyclic" Id="{d8d68e4c-1628-4704-abda-c173c26a6684}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+Intlk.Cond[1] := NOT _force;            // real application: area-safe/air-ok signals (LD/ST, §5.5)
+IF NOT _directionPermitsConfigured OR (Command = E_CylinderCommand.NONE) THEN
+    Intlk.Cond[2] := TRUE;
+ELSIF Command = E_CylinderCommand.EXTEND THEN
+    Intlk.Cond[2] := _extendPermit;
+ELSIF Command = E_CylinderCommand.RETRACT THEN
+    Intlk.Cond[2] := _retractPermit;
+ELSE
+    Intlk.Cond[2] := FALSE;
+END_IF
+Intlk();
+IF __ISVALIDREF(_hal) THEN              // defensive (§5.6) [TC3]
+    OutImm.Extended  := _hal.ExtendedFb;
+    OutImm.Retracted := _hal.RetractedFb;
+END_IF
+OutImm.ExtendedSensorTag := _extendedSensorTag;
+OutImm.RetractedSensorTag := _retractedSensorTag;
+OutImm.ExtendOutputTag := _extendOutputTag;
+OutImm.RetractOutputTag := _retractOutputTag;
+OutImm.Diagnostic := Status.Diagnostic;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ConfigureIoIdentity" Id="{da966427-aa84-430d-aaaf-6b2d28cf8331}">
+      <Declaration><![CDATA[// Schematic identity is application configuration, not device behavior.
+// Diagnostics keep SourcePath as this module and add the exact failed channel.
+METHOD ConfigureIoIdentity
+VAR_INPUT
+    Identity : ST_CylinderIoIdentity;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_extendedSensorTag := Identity.ExtendedSensor.Tag;
+_extendedSensorAddress := Identity.ExtendedSensor.Address;
+_retractedSensorTag := Identity.RetractedSensor.Tag;
+_retractedSensorAddress := Identity.RetractedSensor.Address;
+_extendOutputTag := Identity.ExtendOutput.Tag;
+_retractOutputTag := Identity.RetractOutput.Tag;
+_extendedTimeoutKey := Identity.ExtendedTimeoutKey;
+_retractedTimeoutKey := Identity.RetractedTimeoutKey;
+_bothSensorsKey := Identity.BothSensorsKey;
+_bothSensorTags := CONCAT(Identity.ExtendedSensor.Tag, CONCAT(' / ', Identity.RetractedSensor.Tag));
+_bothSensorAddresses := CONCAT(Identity.ExtendedSensor.Address, CONCAT(' / ', Identity.RetractedSensor.Address));]]></ST></Implementation>
+    </Method>
+    <Method Name="WithdrawOutputs" Id="{4d586967-b1ec-46e2-b210-b0d4c6f593a0}">
+      <Declaration><![CDATA[// Functional stop used by an owning sequence on abort/interlock loss.
+// This is not a certified stop; the safety system remains authoritative.
+METHOD WithdrawOutputs]]></Declaration>
+      <Implementation><ST><![CDATA[IF __ISVALIDREF(_hal) THEN
+    _hal.ExtendOut := FALSE;
+    _hal.RetractOut := FALSE;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="OnAbort" Id="{e057e446-dbf0-4d4e-8095-e77cb11fc9d8}">
+      <Declaration><![CDATA[METHOD PROTECTED OnAbort : DINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnAbort := SUPER^.OnAbort();            // base first (§3.14.2)
+IF __ISVALIDREF(_hal) THEN
+    _hal.ExtendOut := FALSE;
+    _hal.RetractOut := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="PrepareRecipe" Id="{9fc6da18-1a34-436f-b95f-8a202c41c2f2}">
+      <Declaration><![CDATA[METHOD PrepareRecipe : BOOL
+VAR_INPUT
+    Model : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _recipe = 0 THEN
+    _parCfgStaged := ParCfg;
+    _recipePrepared := TRUE;
+    PrepareRecipe := TRUE;
+ELSIF _recipe.Load(ModelCode := Model.ModelCode, RecipeKey := 'CylinderCM', pParCfg := ADR(_parCfgStaged), Size := SIZEOF(_parCfgStaged)) THEN
+    _recipePrepared := TRUE;
+    PrepareRecipe := TRUE;
+ELSE
+    _M_Fault(E_Reason.RECIPE_INVALID, 'std.error.recipeSchemaInvalid');
+    _recipePrepared := FALSE;
+    PrepareRecipe := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CommitRecipe" Id="{2507146c-6bb3-4103-92db-e1e95f4c558c}">
+      <Declaration><![CDATA[METHOD CommitRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[IF _recipePrepared THEN ParCfg := _parCfgStaged; END_IF
+_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="AbortRecipe" Id="{56e645a8-70e5-4384-88bd-bbc05886f071}">
+      <Declaration><![CDATA[METHOD AbortRecipe]]></Declaration>
+      <Implementation><ST><![CDATA[_recipePrepared := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="Setup" Id="{4aaae498-7dfe-4e4f-b767-65724d335fde}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name   : STRING(80);
+    HalRef : REFERENCE TO ST_CylinderHal;
+    Recipe : I_RecipeProvider;
+END_VAR
+VAR
+    InitialModel : ST_ModelId;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'std.moduleType.cylinder.name', DescriptionKey := 'std.moduleType.cylinder.description');
+_hal REF= HalRef;                        // [TC3] TC3 §3.11
+_recipe := Recipe;
+Intlk.Define(Index := 1, Description := 'project.interlock.areaSafe', Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+Intlk.Define(Index := 2, Description := 'std.interlock.directionPermitted', Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+_M_PublishCommand(Value := TO_DINT(E_CylinderCommand.EXTEND), Label := 'std.command.extend');
+_M_PublishCommand(Value := TO_DINT(E_CylinderCommand.RETRACT), Label := 'std.command.retract');
+Setup := PrepareRecipe(Model := InitialModel);
+IF Setup THEN CommitRecipe(); END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SimForceInterlock" Id="{2b863fba-53a5-4d97-a1bb-8a1c65d463e5}">
+      <Declaration><![CDATA[// §5.7 SIM-only force hook — wrap body in {IF defined (SIM_HOOKS)} for release builds
+METHOD SimForceInterlock : BOOL
+VAR_INPUT
+    Id : INT;
+    Ok : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_force := NOT Ok;
+SimForceInterlock := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{f4246abc-e03f-4d9d-9774-cf8b297a7d67}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch
+VAR
+    ext : BOOL;
+    d   : ST_Diagnostic;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF _manualReq THEN
+    _manualReq := FALSE;
+    IF (_manualCmd = TO_DINT(E_CylinderCommand.EXTEND)) OR (_manualCmd = TO_DINT(E_CylinderCommand.RETRACT)) THEN
+        Command := _manualCmd;
+    ELSE
+        _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedCylinderCommand');
+        RETURN;
+    END_IF
+END_IF
+IF (Command <> E_CylinderCommand.EXTEND) AND (Command <> E_CylinderCommand.RETRACT) THEN
+    _M_Fault(E_Reason.UNSUPPORTED_COMMAND, 'std.error.unsupportedCylinderCommand');
+    RETURN;
+END_IF
+IF Command = E_CylinderCommand.EXTEND THEN
+    _M_TagCommand(Id := 1, Label := 'std.command.extend');       // §8.11.4(a)
+    IF _directionPermitsConfigured THEN
+        Intlk.Define(Index := 2, Description := _extendPermitKey, Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+        Intlk.Cond[2] := _extendPermit;
+    ELSE
+        Intlk.Cond[2] := TRUE;
+    END_IF
+ELSE
+    _M_TagCommand(Id := 2, Label := 'std.command.retract');
+    IF _directionPermitsConfigured THEN
+        Intlk.Define(Index := 2, Description := _retractPermitKey, Reason := E_Reason.INTERLOCK_DROPPED, Bypassable := FALSE);
+        Intlk.Cond[2] := _retractPermit;
+    ELSE
+        Intlk.Cond[2] := TRUE;
+    END_IF
+END_IF
+Intlk();
+IF NOT Intlk.AllOk THEN
+    _hal.ExtendOut := FALSE;
+    _hal.RetractOut := FALSE;
+    d := Intlk.Diagnostic;
+    d.SourcePath := _name;                            // owner sets the path (§7.2)
+    _M_FaultDiag(d);
+    RETURN;
+END_IF
+IF _hal.ExtendedFb AND _hal.RetractedFb THEN
+    IF _bothSensorsKey <> '' THEN
+        _M_FaultIoN(Code := PL_ModuleReasons.CYL_BOTH_SENSORS, Text := _bothSensorsKey,
+            IoTag := _bothSensorTags, IoAddress := _bothSensorAddresses);
+    ELSE
+        _M_FaultN(Code := PL_ModuleReasons.CYL_BOTH_SENSORS, Text := 'std.error.cylinderBothSensors');
+    END_IF
+    RETURN;
+END_IF
+ext := (Command = E_CylinderCommand.EXTEND);
+CASE _step OF
+    10:
+        OutCmd.Reached := FALSE;
+        _hal.ExtendOut  := ext;
+        _hal.RetractOut := NOT ext;
+        _tMove(IN := FALSE);
+        _step := 20;
+    20:
+        _tMove(IN := TRUE, PT := ParCfg.MoveTimeout);
+        IF (ext AND _hal.ExtendedFb) OR ((NOT ext) AND _hal.RetractedFb) THEN
+            _tMove(IN := FALSE);
+            OutCmd.Reached := TRUE;
+            _M_Complete();
+        ELSIF _tMove.Q THEN
+            _tMove(IN := FALSE);
+            IF ext AND (_extendedSensorTag <> '') THEN
+                _M_FaultIoN(Code := PL_ModuleReasons.CYL_NOT_EXTENDED, Text := _extendedTimeoutKey,
+                    IoTag := _extendedSensorTag, IoAddress := _extendedSensorAddress);
+            ELSIF (NOT ext) AND (_retractedSensorTag <> '') THEN
+                _M_FaultIoN(Code := PL_ModuleReasons.CYL_NOT_RETRACTED, Text := _retractedTimeoutKey,
+                    IoTag := _retractedSensorTag, IoAddress := _retractedSensorAddress);
+            ELSIF ext THEN
+                _M_FaultN(Code := PL_ModuleReasons.CYL_NOT_EXTENDED, Text := 'std.error.cylinderExtendTimeout');
+            ELSE
+                _M_FaultN(Code := PL_ModuleReasons.CYL_NOT_RETRACTED, Text := 'std.error.cylinderRetractTimeout');
+            END_IF
+        END_IF
+ELSE
+    _M_Fault(E_Reason.STEP_STALLED, 'std.error.undefinedStep');    // defined ELSE (§5.6)
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetDirectionalPermits" Id="{b1045a9a-9497-4b07-b315-d6be9086fd4c}">
+      <Declaration><![CDATA[// Functional collision/process interlocks supplied by the owning EM/Unit.
+// Methods are not OPC UA writes; the check is repeated inside dispatch so manual
+// commands use the same rule. Certified safety remains external.
+METHOD SetDirectionalPermits
+VAR_INPUT
+    ExtendOk : BOOL;
+    RetractOk : BOOL;
+    ExtendDescriptionKey : STRING(255);
+    RetractDescriptionKey : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_directionPermitsConfigured := TRUE;
+_extendPermit := ExtendOk;
+_retractPermit := RetractOk;
+_extendPermitKey := ExtendDescriptionKey;
+_retractPermitKey := RetractDescriptionKey;]]></ST></Implementation>
+    </Method>
+    <Method Name="AppendDirectionalRelease" Id="{13e02c3d-0e9d-4f2f-8820-1b10fc328401}">
+      <Declaration><![CDATA[// Pure release-query companion to SetDirectionalPermits. The owning Unit uses
+// this for act-or-explain so the HMI checks the exact permit used by dispatch.
+METHOD AppendDirectionalRelease : INT
+VAR_INPUT
+    Value : DINT;
+END_VAR
+VAR_IN_OUT
+    Report : ST_ReleaseReport;
+END_VAR
+VAR
+    permitted : BOOL;
+    validCommand : BOOL;
+    descriptionKey : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[permitted := TRUE;
+validCommand := (Value = TO_DINT(E_CylinderCommand.EXTEND))
+    OR (Value = TO_DINT(E_CylinderCommand.RETRACT));
+descriptionKey := '';
+IF _directionPermitsConfigured AND (Value = TO_DINT(E_CylinderCommand.EXTEND)) THEN
+    permitted := _extendPermit;
+    descriptionKey := _extendPermitKey;
+ELSIF _directionPermitsConfigured AND (Value = TO_DINT(E_CylinderCommand.RETRACT)) THEN
+    permitted := _retractPermit;
+    descriptionKey := _retractPermitKey;
+ELSIF NOT validCommand THEN
+    permitted := FALSE;
+    descriptionKey := 'std.error.unsupportedCylinderCommand';
+ELSE
+    permitted := TRUE;
+END_IF
+IF NOT permitted AND (Report.Count < PL_Fraktal.MAX_RELEASE_REASONS) THEN
+    Report.Count := Report.Count + 1;
+    Report.Reasons[Report.Count].Description := descriptionKey;
+    Report.Reasons[Report.Count].SourcePath := _name;
+    IF validCommand THEN
+        Report.Reasons[Report.Count].ReasonCode := E_Reason.INTERLOCK_DROPPED;
+    ELSE
+        Report.Reasons[Report.Count].ReasonCode := E_Reason.UNSUPPORTED_COMMAND;
+    END_IF
+    Report.Reasons[Report.Count].Kind := E_ReleaseKind.INTERLOCK;
+    Report.Reasons[Report.Count].Bypassable := FALSE;
+END_IF
+AppendDirectionalRelease := Report.Count;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{014aa002-cf47-48a0-96b5-ed59efddfa57}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

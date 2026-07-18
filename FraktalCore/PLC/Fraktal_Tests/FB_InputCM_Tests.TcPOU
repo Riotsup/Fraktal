@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_InputCM_Tests" Id="{5f23aa6a-e14f-460b-a881-7b5d5886f894}" SpecialFunc="None">
+    <Declaration><![CDATA[// Basic passive input types used to keep hardware-bound signals out of Units.
+FUNCTION_BLOCK FB_InputCM_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _input : FB_DigitalInputCM;
+    _air : FB_AirPressureMonitorCM;
+    _inputHal : ST_DigitalInputHal;
+    _airHal : ST_AirPressureHal;
+    _inputIdentity, _lowIdentity, _operatingIdentity : ST_IoPointIdentity;
+    _d : ST_Diagnostic;
+    _wired : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[IF NOT _wired THEN
+    _input.Setup(Name := 'Test.PartPresent', HalRef := _inputHal,
+        DisplayNameKey := 'project.module.partPresentSensor.name',
+        DescriptionKey := 'project.module.partPresentSensor.description');
+    _inputIdentity.Tag := '_101B601'; _inputIdentity.Address := 'EL1809 Ch12';
+    _input.ConfigureIoIdentity(Identity := _inputIdentity);
+    _air.Setup(Name := 'Test.Air', HalRef := _airHal);
+    _lowIdentity.Tag := '_000MB085A_2'; _lowIdentity.Address := 'EL1809 Ch10';
+    _operatingIdentity.Tag := '_000MB085A_4'; _operatingIdentity.Address := 'EL1809 Ch11';
+    _air.ConfigureIoIdentity(LowSensor := _lowIdentity, OperatingSensor := _operatingIdentity);
+    _inputHal.Quality := TRUE; _airHal.Quality := TRUE;
+    _wired := TRUE;
+ELSE
+    ;
+END_IF
+Digital_input_publishes_semantic_value_and_identity();
+Air_monitor_derives_pressure_and_faults_on_conflict();]]></ST></Implementation>
+    <Method Name="Digital_input_publishes_semantic_value_and_identity" Id="{3053e05f-ad4c-418d-91e7-9fb841ff223a}">
+      <Declaration><![CDATA[METHOD Digital_input_publishes_semantic_value_and_identity]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Digital_input_publishes_semantic_value_and_identity');
+_inputHal.Value := TRUE;
+_input();
+AssertTrue(Condition := _input.OutImm.Value, Message := 'HAL value published');
+AssertEquals_STRING(Expected := '_101B601', Actual := _input.OutImm.IoTag,
+    Message := 'physical identity is injected, not embedded in the type');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+    <Method Name="Air_monitor_derives_pressure_and_faults_on_conflict" Id="{5fec7a29-2d4a-4f52-a64a-c33c6eb3b945}">
+      <Declaration><![CDATA[METHOD Air_monitor_derives_pressure_and_faults_on_conflict]]></Declaration>
+      <Implementation><ST><![CDATA[TEST('Air_monitor_derives_pressure_and_faults_on_conflict');
+_airHal.LowPressure := FALSE; _airHal.OperatingPressure := TRUE;
+_air();
+AssertTrue(Condition := _air.OutImm.PressureOk,
+    Message := 'operating threshold with low switch clear is ready');
+_airHal.LowPressure := TRUE; _airHal.OperatingPressure := TRUE;
+_air();
+_d := _air.GetFaultSummary();
+AssertEquals_DWORD(Expected := TO_DWORD(PL_ModuleReasons.AIR_SWITCH_CONFLICT),
+    Actual := _air.ErrorID, Message := 'contradictory switches use registered type reason');
+AssertEquals_STRING(Expected := '_000MB085A_2 / _000MB085A_4', Actual := _d.IoTag,
+    Message := 'both implicated electrical tags are preserved');
+TEST_FINISHED();]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_RunStyle" Id="{71f05cbb-f8b7-4261-b1c4-042dc4484526}">
+    <Declaration><![CDATA[// Core §3.4.2 — how a running mode advances. HOLD_TO_RUN over HMI is NON-SAFETY.
+{attribute 'qualified_only'}
+TYPE E_RunStyle : (CONTINUOUS := 0, SINGLE_STEP := 1, HOLD_TO_RUN := 2) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ReleaseReport" Id="{54dda509-7f88-4d2e-82fc-9fa99ac99ff1}">
+    <Declaration><![CDATA[// Core §7.8 — the full 'why is this blocked?' rollup, published for the HMI.
+// Complete by contract: lists EVERY failing precondition, not just first-out.
+TYPE ST_ReleaseReport :
+STRUCT
+    Released : BOOL;         // TRUE = nothing blocks (Count = 0)
+    Count    : INT;
+    Reasons  : ARRAY[1..PL_Fraktal.MAX_RELEASE_REASONS] OF ST_ReleaseReason;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_HmiRequestKind" Id="{e9df710a-6a5f-49af-945f-afb6beea62aa}">
+    <Declaration><![CDATA[// Core §3.10/§14 — generic OPC UA request mailbox operation.
+// Append-only: ordinal values are a transport contract with every HMI adapter.
+{attribute 'qualified_only'}
+TYPE E_HmiRequestKind :
+(
+    NONE             := 0,
+    LOGIN            := 1,
+    LOGOUT           := 2,
+    SET_MODE         := 3,
+    SET_MODEL        := 4,
+    START            := 5,
+    STOP             := 6,
+    CONTROL_ON       := 7,
+    CONTROL_OFF      := 8,
+    OPERATOR_RESET   := 9,
+    DECISION_ANSWER  := 10,
+    MANUAL_COMMAND   := 11,
+    SET_RUN_STYLE    := 12,
+    STEP_REQUEST     := 13,
+    SET_HOLD_RUN     := 14,
+    RELEASE_START    := 15,
+    RELEASE_MANUAL   := 16,
+    RELEASE_ACTION   := 17,
+    RESET_OEE        := 18,
+    WRITE_CONFIG     := 19,
+    SHELVE_ALARM     := 20,
+    UNSHELVE_ALARM   := 21,
+    FORCE_CHANNEL    := 22
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

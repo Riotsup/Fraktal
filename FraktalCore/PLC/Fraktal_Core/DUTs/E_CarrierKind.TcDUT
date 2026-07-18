@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_CarrierKind" Id="{c3b2ba67-3ca3-4ade-90f6-d806e5b25d95}">
+    <Declaration><![CDATA[// Core §3.16.1
+{attribute 'qualified_only'}
+TYPE E_CarrierKind : (RFID := 0, DATAMATRIX := 1, BY_POSITION := 2, HOST := 3) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

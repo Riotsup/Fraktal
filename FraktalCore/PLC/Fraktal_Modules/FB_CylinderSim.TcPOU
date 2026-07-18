@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_CylinderSim" Id="{ebefe31c-625b-403b-9da4-d15d4ca563ed}" SpecialFunc="None">
+    <Declaration><![CDATA[// §5.7 per-type sim plant model: drives the HAL feedback with a travel time —
+// shared by TcUnit suites and virtual commissioning (§2.6).
+FUNCTION_BLOCK FB_CylinderSim
+VAR
+    Travel : TIME := T#0S;
+END_VAR
+VAR
+    _hal : REFERENCE TO ST_CylinderHal;
+    _tE, _tR : TON;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT __ISVALIDREF(_hal) THEN
+    RETURN;
+END_IF
+_tE(IN := _hal.ExtendOut AND NOT _hal.ExtendedFb, PT := Travel);
+IF _tE.Q THEN
+    _hal.ExtendedFb  := TRUE;
+    _hal.RetractedFb := FALSE;
+END_IF
+_tR(IN := _hal.RetractOut AND NOT _hal.RetractedFb, PT := Travel);
+IF _tR.Q THEN
+    _hal.RetractedFb := TRUE;
+    _hal.ExtendedFb  := FALSE;
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{936ebc67-a444-498a-bc80-ccf4720d827f}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    HalRef : REFERENCE TO ST_CylinderHal;
+    TravelTime : TIME;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_hal REF= HalRef;
+Travel := TravelTime;
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ControlPowerStatus" Id="{b5975d2b-40b9-4d11-9a6b-2be8d59e90e7}">
+    <Declaration><![CDATA[TYPE ST_ControlPowerStatus :
+STRUCT
+    Present        : BOOL;
+    RequestedOn    : BOOL;
+    ControlOn      : BOOL;
+    Transitioning  : BOOL;
+    RearmRequired  : BOOL;
+    GroupCount     : INT;
+    Groups         : ARRAY[1..PL_Fraktal.MAX_POWER_GROUPS] OF ST_PowerGroupStatus;
+    Diagnostic     : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

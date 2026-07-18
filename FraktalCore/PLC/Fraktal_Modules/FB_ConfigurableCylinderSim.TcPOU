@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_ConfigurableCylinderSim" Id="{b0ae9b61-e51f-4699-890e-12095a54454b}" SpecialFunc="None">
+    <Declaration><![CDATA[// §5.7 sim plant for FB_ConfigurableCylinderCM with redundant sensors: after a travel time
+// it sets all HomeFb[1..HomeN] / WorkFb[1..WorkN] together. StuckWork[i]/StuckHome[i]
+// pin a sensor OFF so a test can inject a discrepancy.
+FUNCTION_BLOCK FB_ConfigurableCylinderSim
+VAR_INPUT
+    Travel : TIME := T#100MS;
+    HomeN  : INT := 1;
+    WorkN  : INT := 1;
+    StuckHome : ARRAY[1..PL_Fraktal.MAX_POS_SENSORS] OF BOOL;   // TRUE = pin this sensor OFF
+    StuckWork : ARRAY[1..PL_Fraktal.MAX_POS_SENSORS] OF BOOL;
+END_VAR
+VAR
+    _hal : REFERENCE TO ST_ConfigurableCylinderHal;
+    _tW, _tH : TON;
+    i : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT __ISVALIDREF(_hal) THEN
+    RETURN;
+END_IF
+_tW(IN := _hal.ToWorkOut, PT := Travel);
+IF _tW.Q THEN
+    FOR i := 1 TO WorkN DO _hal.WorkFb[i] := NOT StuckWork[i]; END_FOR
+    FOR i := 1 TO HomeN DO _hal.HomeFb[i] := FALSE; END_FOR
+END_IF
+_tH(IN := _hal.ToHomeOut OR (NOT _hal.ToWorkOut AND NOT _hal.ToHomeOut), PT := Travel);
+IF _tH.Q THEN
+    FOR i := 1 TO HomeN DO _hal.HomeFb[i] := NOT StuckHome[i]; END_FOR
+    FOR i := 1 TO WorkN DO _hal.WorkFb[i] := FALSE; END_FOR
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="Setup" Id="{3fcb727f-fdf8-4790-a12b-aab92ce786a7}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    HalRef : REFERENCE TO ST_ConfigurableCylinderHal;
+    TravelTime : TIME;
+    Home : INT;
+    Work : INT;
+END_VAR
+VAR
+    j : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_hal REF= HalRef;
+Travel := TravelTime;
+HomeN := Home;
+WorkN := Work;
+FOR j := 1 TO HomeN DO _hal.HomeFb[j] := TRUE; END_FOR   // start at home, all agree
+Setup := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

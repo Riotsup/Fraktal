@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_LocalStationConfig" Id="{92c257a7-85f6-41e1-96ec-e0f39cbed065}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.8a — DEFAULT station-config provider: in-PLC PERSISTENT records, editable
+// locally over OPC UA (§3.10). Remote sources (asset system, MES) substitute later
+// through I_StationConfig without touching module code (O1, O6).
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_LocalStationConfig IMPLEMENTS I_StationConfig
+VAR PERSISTENT
+    _n : INT;
+END_VAR
+VAR
+    _keys : ARRAY[1..PL_Fraktal.MAX_STATIONCFG] OF STRING(80);
+    _ptr  : ARRAY[1..PL_Fraktal.MAX_STATIONCFG] OF PVOID;
+    _size : ARRAY[1..PL_Fraktal.MAX_STATIONCFG] OF UDINT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// no cyclic body]]></ST>
+    </Implementation>
+    <Method Name="Load" Id="{e1b60d3d-d49d-4e07-8da5-21cf16992a0c}">
+      <Declaration><![CDATA[METHOD Load : BOOL
+VAR_INPUT
+    Key : STRING;
+    pCfg : PVOID;
+    Size : UDINT;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Load := FALSE;
+FOR i := 1 TO _n DO
+    IF (_keys[i] = Key) AND (_size[i] = Size) AND (pCfg <> 0) THEN
+        MEMCPY(destAddr := pCfg, srcAddr := _ptr[i], n := Size);
+        Load := TRUE;
+        RETURN;
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Store" Id="{b310a0c9-7061-4a5d-be51-720b60716df8}">
+      <Declaration><![CDATA[METHOD Store : BOOL
+VAR_INPUT
+    Key : STRING;
+    pCfg : PVOID;
+    Size : UDINT;
+END_VAR
+VAR
+    i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Store := FALSE;
+FOR i := 1 TO _n DO
+    IF (_keys[i] = Key) AND (_size[i] = Size) AND (pCfg <> 0) THEN
+        MEMCPY(destAddr := _ptr[i], srcAddr := pCfg, n := Size);   // persists (registered targets live in persistent areas)
+        Store := TRUE;
+        RETURN;
+    END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Register" Id="{a6063494-7e17-4503-a0ca-6fe0c0f6a8c9}">
+      <Declaration><![CDATA[// application wiring: bind a module's PERSISTENT StationCfg to a key
+METHOD Register : BOOL
+VAR_INPUT
+    Key : STRING(80);
+    pData : PVOID;
+    Size : UDINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (_n >= PL_Fraktal.MAX_STATIONCFG) OR (pData = 0) THEN
+    Register := FALSE;
+    RETURN;
+END_IF
+_n := _n + 1;
+_keys[_n] := Key;
+_ptr[_n] := pData;
+_size[_n] := Size;
+Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

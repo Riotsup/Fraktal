@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_StepResult" Id="{4f7c2d81-9b35-4e6a-8c04-d17e5a92b634}">
+    <Declaration><![CDATA[// Core §6.8/§6.10 — the shared step transition result of FB_SequenceBase.
+// The ACTIVE step's action is the only writer; every chart transition reads it;
+// the step's exit action clears it back to NONE (single token => no ambiguity).
+// ADVANCE takes the normal successor; JUMP1..JUMP3 select declared alternative
+// branches (§6.10 decisions/skips/retries) — a chart maps each to one target.
+{attribute 'qualified_only'}
+TYPE E_StepResult :
+(
+    NONE    := 0,   // stay in this step (still working/waiting)
+    ADVANCE := 1,   // standard transition: the awaited work is done
+    JUMP1   := 2,   // first declared alternative branch
+    JUMP2   := 3,   // second declared alternative branch
+    JUMP3   := 4    // third declared alternative branch
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

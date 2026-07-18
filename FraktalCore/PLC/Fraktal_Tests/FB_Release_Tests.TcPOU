@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Release_Tests" Id="{d2e0586b-e862-4e21-9d96-0e89c8ce3a30}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §7.8: ReleaseReportStart lists EVERY failed precondition (interlock + more),
+// and Released flips true when all clear.
+FUNCTION_BLOCK FB_Release_Tests EXTENDS TcUnit.FB_TestSuite
+VAR
+    _u : FB_ProbeUnitManual;
+    _r : ST_ReleaseReport;
+    _w : BOOL;
+    _released : BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT _w THEN
+    _u.Setup('Test.RelUnit');
+    _u();
+    _w := TRUE;
+END_IF
+Lists_failed_interlock();
+Released_when_all_clear();
+Start_gate_matches_release_report();]]></ST>
+    </Implementation>
+    <Method Name="Lists_failed_interlock" Id="{c0f4ea31-f98c-4d61-aeed-44ca7811f571}">
+      <Declaration><![CDATA[METHOD Lists_failed_interlock]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Lists_failed_interlock');
+_u.SetAir(Ok := FALSE);          // interlock FALSE
+_u.SetMode(Mode := E_Mode.AUTO);
+_u();
+_released := _u.ReleaseReportStart(Report := _r);
+AssertFalse(Condition := _released, Message := 'query Boolean matches blocked report');
+AssertFalse(Condition := _r.Released, Message := 'Start blocked -> Released FALSE');
+AssertTrue(Condition := _r.Count >= 1, Message := 'at least the air interlock is listed (§7.8 full list)');
+AssertEquals_STRING(Expected := 'Test.RelUnit', Actual := _r.Reasons[1].SourcePath,
+    Message := 'release reason retains the owning module path');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Released_when_all_clear" Id="{11747425-84ec-45c0-b2c8-ce9355b925a7}">
+      <Declaration><![CDATA[METHOD Released_when_all_clear]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Released_when_all_clear');
+_u.SetAir(Ok := TRUE);
+_u();
+_u();
+_released := _u.ReleaseReportStart(Report := _r);
+AssertTrue(Condition := _released, Message := 'query Boolean matches released report');
+AssertTrue(Condition := _r.Released, Message := 'all preconditions met -> Released TRUE, Count 0');
+AssertEquals_INT(Expected := 0, Actual := _r.Count, Message := 'no reasons when released');
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Start_gate_matches_release_report" Id="{7a5e8893-265f-4eb0-bdf2-43ead0bacfab}">
+      <Declaration><![CDATA[// Core T10: the report and the executable gate share one authoritative predicate.
+METHOD Start_gate_matches_release_report]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('Start_gate_matches_release_report');
+_u.SetAir(Ok := FALSE);
+_u();
+_released := _u.ReleaseReportStart(Report := _r);
+AssertFalse(Condition := _r.Released, Message := 'failed interlock is reported');
+AssertFalse(Condition := _released, Message := 'blocked report returns FALSE without a record copy');
+AssertFalse(Condition := _u.Start(), Message := 'reported interlock is also enforced by Start');
+
+_u.SetAir(Ok := TRUE);
+_u();
+_released := _u.ReleaseReportStart(Report := _r);
+AssertTrue(Condition := _r.Released, Message := 'clear report releases Start');
+AssertTrue(Condition := _released, Message := 'released report returns TRUE without a record copy');
+AssertTrue(Condition := _u.Start(), Message := 'Start accepts exactly when report is released');
+_u.Stop();
+_u();
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

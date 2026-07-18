@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TimingRow" Id="{99889cbe-b479-4343-95e7-784b3ff2a6fd}">
+    <Declaration><![CDATA[// Core §8.11.4 — one timing aggregate, keyed by command id (a) or StepNo (b)
+TYPE ST_TimingRow :
+STRUCT
+    Id    : DINT;         // TO_DINT(E_<Type>Command) or StepNo; 0 = untagged
+    Label : STRING(120);   // command/step localization key for the HMI table
+    Class : E_TimeClass;  // §8.11.4(f); commands are WORK by definition
+    Count : UDINT;        // completed executions (0 = row unused)
+    Last  : TIME;
+    Minimum : TIME;
+    Maximum : TIME;
+    Avg   : TIME;         // running mean (F_TimingUpdate)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

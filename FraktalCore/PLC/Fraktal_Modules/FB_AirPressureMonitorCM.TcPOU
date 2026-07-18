@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AirPressureMonitorCM" Id="{1862918e-aa03-4414-ac9d-d7a19314762e}" SpecialFunc="None">
+    <Declaration><![CDATA[// Basic passive two-threshold pneumatic-pressure CM. Both switches active is
+// implausible and faults with both exact tags; neither/high-only are status states.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_AirPressureMonitorCM EXTENDS FB_ControlModuleBase
+VAR_OUTPUT
+    OutImm : ST_AirPressureOutImm;
+END_VAR
+VAR
+    _hal : REFERENCE TO ST_AirPressureHal;
+    _lowIdentity, _operatingIdentity : ST_IoPointIdentity;
+    _bothTags, _bothAddresses : STRING(80);
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[Cyclic();]]></ST></Implementation>
+    <Method Name="Setup" Id="{9affcfde-9e41-401a-bfe2-d67dc9795c5c}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    Name : STRING(80);
+    HalRef : REFERENCE TO ST_AirPressureHal;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_M_SetName(Name);
+_M_SetPresentation(DisplayNameKey := 'std.moduleType.airPressure.name',
+    DescriptionKey := 'std.moduleType.airPressure.description');
+_hal REF= HalRef;
+Setup := __ISVALIDREF(_hal);]]></ST></Implementation>
+    </Method>
+    <Method Name="ConfigureIoIdentity" Id="{825e28ad-8325-464e-9a73-2d407b04b0fc}">
+      <Declaration><![CDATA[METHOD ConfigureIoIdentity
+VAR_INPUT
+    LowSensor : ST_IoPointIdentity;
+    OperatingSensor : ST_IoPointIdentity;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_lowIdentity := LowSensor;
+_operatingIdentity := OperatingSensor;
+_bothTags := CONCAT(LowSensor.Tag, CONCAT(' / ', OperatingSensor.Tag));
+_bothAddresses := CONCAT(LowSensor.Address, CONCAT(' / ', OperatingSensor.Address));]]></ST></Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{9a04f407-a329-426e-992c-0f0f27ee5b78}">
+      <Declaration><![CDATA[METHOD PROTECTED OnCyclic : DINT]]></Declaration>
+      <Implementation><ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+IF __ISVALIDREF(_hal) THEN
+    OutImm.LowPressure := _hal.LowPressure;
+    OutImm.OperatingPressure := _hal.OperatingPressure;
+    OutImm.Quality := _hal.Quality;
+    OutImm.Contradictory := _hal.LowPressure AND _hal.OperatingPressure;
+    OutImm.PressureOk := _hal.OperatingPressure AND NOT _hal.LowPressure AND _hal.Quality;
+    IF OutImm.Contradictory THEN
+        _M_FaultIoN(Code := PL_ModuleReasons.AIR_SWITCH_CONFLICT,
+            Text := 'std.error.airPressureSwitchConflict',
+            IoTag := _bothTags, IoAddress := _bothAddresses);
+    ELSE
+        ;
+    END_IF
+ELSE
+    OutImm.LowPressure := FALSE;
+    OutImm.OperatingPressure := FALSE;
+    OutImm.Quality := FALSE;
+    OutImm.Contradictory := FALSE;
+    OutImm.PressureOk := FALSE;
+END_IF
+OutImm.LowSensorTag := _lowIdentity.Tag;
+OutImm.OperatingSensorTag := _operatingIdentity.Tag;
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_Dispatch" Id="{c1ed801c-d79c-4e7d-be30-b7129ae3fb84}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Dispatch]]></Declaration>
+      <Implementation><ST><![CDATA[_M_Fault(E_Reason.UNSUPPORTED_COMMAND,
+    'std.error.passiveInputHasNoCommand');]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_PublishStatus" Id="{fc69255d-7bf9-4132-964d-3ecb5983d52f}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PublishStatus]]></Declaration>
+      <Implementation><ST><![CDATA[SUPER^._M_PublishStatus();
+OutImm.Diagnostic := Status.Diagnostic;]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

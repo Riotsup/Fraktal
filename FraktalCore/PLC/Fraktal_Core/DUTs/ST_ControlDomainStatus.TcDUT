@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_ControlDomainStatus" Id="{4fc79136-8ecc-4ea9-be68-b688266e7843}">
+    <Declaration><![CDATA[// Core §9.8 — one independently owned safety/control-power arrangement.
+// A Unit consumes this record; zero or many Units may reference the same domain.
+TYPE ST_ControlDomainStatus :
+STRUCT
+    Present         : BOOL;        // FALSE = this Unit has no assigned control domain
+    Id              : STRING(80);  // stable deployment identity, not a Unit browse path
+    Name            : STRING(80);  // operator-facing cage/cell/energy-area name
+    ReadyForStart   : BOOL;        // coordinator aggregate; fail-closed when Present
+    Safety          : ST_SafetyStatus;
+    ControlPower    : ST_ControlPowerStatus;
+    MemberCount     : INT;
+    MemberUnitPaths : ARRAY[1..PL_Fraktal.MAX_CONTROL_DOMAIN_UNITS] OF STRING(255);
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

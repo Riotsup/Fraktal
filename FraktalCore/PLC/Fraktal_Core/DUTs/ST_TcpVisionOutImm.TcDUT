@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="ST_TcpVisionOutImm" Id="{e3668539-4981-4891-ae2e-9c18d31e5854}">
+    <Declaration><![CDATA[TYPE ST_TcpVisionOutImm :
+STRUCT
+    LinkState    : E_ByteChannelState;
+    LastResponse : STRING(255);
+    Diagnostic   : ST_Diagnostic;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

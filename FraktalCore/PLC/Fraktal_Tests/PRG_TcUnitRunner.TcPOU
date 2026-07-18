@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="PRG_TcUnitRunner" Id="{86af2602-fbcc-443b-aee7-03f4e3f99992}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §5.7 / TC3 §5.7 — one open-ended gate: every suite joins unchanged (§6.8, H.6)
+PROGRAM PRG_TcUnitRunner
+VAR
+    BaseTests      : FB_Base_Tests;
+    PermTests      : FB_PermIntlk_Tests;
+    PowerGroupTests: FB_PowerGroupCM_Tests;
+    TwoHandTests   : FB_TwoHandStartCM_Tests;
+    PressDemoTests : FB_PressDemoUnit_Tests;
+    TimingTests    : FB_Timing_Tests;
+    UnitTests      : FB_Unit_Tests;
+    ConnectorTests : FB_Connector_Tests;
+    CylinderTests  : FB_CylinderCM_Tests;
+    ConfigurableCylinderTests : FB_ConfigurableCylinderCM_Tests;
+    ClampTests     : FB_ClampEM_Tests;
+    ClampStationTests : FB_ClampStationUnit_Tests;
+    HmiTests       : FB_Hmi_Tests;
+    IoTopologyTests: FB_IoTopologyPublisher_Tests;
+    InputModuleTests: FB_InputCM_Tests;
+    AccessTests    : FB_Access_Tests;
+    AlarmLogTests  : FB_AlarmLog_Tests;
+    ManualCmdTests : FB_ManualCmd_Tests;
+    MultiRootTests : FB_MultiRoot_Tests;
+    OeeTests       : FB_Oee_Tests;
+    ReleaseTests   : FB_Release_Tests;
+    ShelveTests    : FB_Shelve_Tests;
+    TcpDeviceTests : FB_TcpDev_Tests;
+    PartTraceTests : FB_PartTrace_Tests;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TcUnit.RUN();]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

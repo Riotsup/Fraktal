@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_ResetClass" Id="{897730c6-8573-454d-aef1-4ef80e791392}">
+    <Declaration><![CDATA[// Core §8.3(b) — AUTO_RESET closes when the condition re-establishes;
+// MANUAL_RESET blocks (Unit will not Start) until a deliberate operator reset.
+{attribute 'qualified_only'}
+TYPE E_ResetClass : (AUTO_RESET := 0, MANUAL_RESET := 1) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

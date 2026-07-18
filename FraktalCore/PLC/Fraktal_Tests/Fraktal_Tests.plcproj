@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{fdb931c7-7fb9-48e9-a40f-5c9ec6e4c5ca}</ProjectGuid>
+    <SubObjectsSortedByName>True</SubObjectsSortedByName>
+    <Name>Fraktal_Tests</Name>
+    <ProgramVersion>3.1.4024.0</ProgramVersion>
+    <Application>{b7f6d7fe-d798-4686-a726-c0c5f8500e58}</Application>
+    <TypeSystem>{5ce4241a-0a00-4b7c-88f1-d17af43bbb35}</TypeSystem>
+    <Implicit_Task_Info>{7e0de90c-a87b-4f71-9280-1f448814f107}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{96746d50-8b41-4130-b90f-ada193ebce73}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{2b27b616-7f08-4df5-a50c-5945216d6326}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{f736ac4f-781a-4b71-b643-6a566a2bec22}</LibraryReferences>
+    <DefaultNamespace>Fraktal_Tests</DefaultNamespace>
+    <Company>fraktal-automation</Company>
+    <Title>Fraktal_Tests</Title>
+    <ProjectVersion>0.1.0.7</ProjectVersion>
+    <Released>false</Released>
+    <Author>fraktal-automation</Author>
+    <Description>Aggregate Fraktal Core + Modules + Press Demo TcUnit gate - excluded from deployed runtime (Core 5.7).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- This manifest deliberately lives at the PLC common ancestor. TwinCAT's
+         Add Existing Item importer rejects a raw Compile path containing '..'
+         before it evaluates Link metadata. All sources therefore use downward,
+         repository-relative paths while remaining single-source linked files. -->
+    <Compile Include="Fraktal_Tests\PlcTask.TcTTO">
+      <Link>PlcTask.TcTTO</Link><SubType>Code</SubType>
+    </Compile>
+    <!-- Project sources are linked, never copied: the aggregate gate tests the
+         same application Unit, release logic, and native SFCs that are deployed. -->
+    <Compile Include="Fraktal_Press_Demo\01_PneumaticPress\Sequences\FB_PressDemoLoadPosition.TcPOU">
+      <Link>PressDemo\Sequences\FB_PressDemoLoadPosition.TcPOU</Link><SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Press_Demo\01_PneumaticPress\Sequences\FB_PressDemoHome.TcPOU">
+      <Link>PressDemo\Sequences\FB_PressDemoHome.TcPOU</Link><SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Press_Demo\01_PneumaticPress\Sequences\FB_PressDemoChangeover.TcPOU">
+      <Link>PressDemo\Sequences\FB_PressDemoChangeover.TcPOU</Link><SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Press_Demo\01_PneumaticPress\Sequences\FB_PressDemoAuto.TcPOU">
+      <Link>PressDemo\Sequences\FB_PressDemoAuto.TcPOU</Link><SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Press_Demo\01_PneumaticPress\Release\FB_PressDemoRelease.TcPOU">
+      <Link>PressDemo\Release\FB_PressDemoRelease.TcPOU</Link><SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Press_Demo\01_PneumaticPress\FB_PressDemoUnit.TcPOU">
+      <Link>PressDemo\FB_PressDemoUnit.TcPOU</Link><SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Access_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_AlarmLog_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Base_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ConfigurableCylinderCM_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ClampEM_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ClampStationUnit_Tests.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="Fraktal_Tests\FB_Connector_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_CylinderCM_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Hmi_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_IoTopologyPublisher_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_InputCM_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ManualCmd_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_MultiRoot_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Oee_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_PermIntlk_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_PowerGroupCM_Tests.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="Fraktal_Tests\FB_TwoHandStartCM_Tests.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="Fraktal_Tests\FB_PressDemoUnit_Tests.TcPOU"><SubType>Code</SubType></Compile>
+    <Compile Include="Fraktal_Tests\FB_ProbeCM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ProbeConnector.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ProbeEM.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ProbeUnit.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_ProbeUnitManual.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Release_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_PartTrace_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Shelve_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_TcpDev_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Timing_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\FB_Unit_Tests.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Fraktal_Tests\PRG_TcUnitRunner.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_Standard">
+      <DefaultResolution>Tc2_Standard, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Standard</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_System">
+      <DefaultResolution>Tc2_System, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_System</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc2_Utilities">
+      <DefaultResolution>Tc2_Utilities, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_Utilities</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Tc3_Module">
+      <DefaultResolution>Tc3_Module, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc3_Module</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Core">
+      <DefaultResolution>Fraktal_Core, 0.1.0.3 (fraktal-automation)</DefaultResolution>
+      <Namespace>Fraktal_Core</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="Fraktal_Modules">
+      <DefaultResolution>Fraktal_Modules, 0.1.0.2 (fraktal-automation)</DefaultResolution>
+      <Namespace>Fraktal_Modules</Namespace>
+    </PlaceholderReference>
+    <PlaceholderReference Include="TcUnit">
+      <DefaultResolution>TcUnit, * (www.tcunit.org)</DefaultResolution>
+      <Namespace>TcUnit</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+</Project>

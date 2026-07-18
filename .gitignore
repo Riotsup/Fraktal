@@ -1,0 +1,6 @@
+# Exclude an entire folder
+NexeedReferenceOnly/
+Specification/
+.claude/
+.dart_localappdata/
+.agents/

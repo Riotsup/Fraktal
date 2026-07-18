@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <DUT Name="E_GatedAction" Id="{bc6de36b-7a16-4fbe-96f2-19a64c5a2bb0}">
+    <Declaration><![CDATA[// Core §7.7(a) — the enumerated protected actions (array index 0..9)
+{attribute 'qualified_only'}
+TYPE E_GatedAction :
+(
+    DATA_READ     := 0,   // view ParCfg/StationCfg values
+    DATA_WRITE    := 1,   // edit ParCfg/StationCfg (§3.8a)
+    MANUAL        := 2,   // manual movements default (§7.6 may raise per function)
+    CHANGEOVER    := 3,   // SetModel (§3.1b)
+    MODE_CHANGE   := 4,   // SetMode (§3.4)
+    START_STOP    := 5,
+    ALARM_HISTORY := 6,   // browse §8.3 ring
+    ALARM_RESET   := 7,   // OperatorReset (§8.3(b))
+    ACCESS_POLICY := 8,   // editing the policy itself
+    ALARM_SHELVE  := 9,   // §8.10 shelve/unshelve an annunciated alarm
+    POWER_CONTROL := 10   // §9.8 Control On/Off and power-group requests
+) DINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressIoDriver" Id="{bedb7de0-6ee7-499c-942c-a47bd1ba5582}" SpecialFunc="None">
+    <Declaration><![CDATA[// Project Hardware Driver layer. This is the only POU that accesses GVL_PressIO.
+// It maps raw process-image symbols to semantic HALs and refreshes the Core
+// topology publisher. It contains no sequence, mode, recipe or device behavior.
+FUNCTION_BLOCK FB_PressIoDriver
+VAR
+    _publisher : FB_IoTopologyPublisher;
+    _unit : REFERENCE TO FB_PressDemoUnit;
+    _attached : BOOL;
+END_VAR]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="Setup" Id="{3d2dc4cb-5c7c-441c-b71b-e76c6dc5e5ea}">
+      <Declaration><![CDATA[METHOD Setup : BOOL
+VAR_INPUT
+    UnitRef : REFERENCE TO FB_PressDemoUnit;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_unit REF= UnitRef;
+_attached := _publisher.Setup(DataRef := GVL_PressFieldbus.Topology, ResetData := FALSE)
+    AND __ISVALIDREF(_unit);
+Setup := _attached;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ReadInputs" Id="{0808b97f-7dcc-44e8-9480-17a48c17ac6f}">
+      <Declaration><![CDATA[METHOD M_ReadInputs
+VAR_IN_OUT
+    PressHal : ST_CylinderHal;
+    DoorHal : ST_CylinderHal;
+    SlideHal : ST_CylinderHal;
+    TwoHandHal : ST_TwoHandHal;
+    PowerHal : ST_PowerGroupHal;
+    PartPresentHal : ST_DigitalInputHal;
+    AirPressureHal : ST_AirPressureHal;
+    RawEStopHealthy : BOOL;
+    SafeEStopOk : BOOL;
+    SafeGuardClosed : BOOL;
+    SafeTwoHandActive : BOOL;
+    SafePneumaticPermit : BOOL;
+    SafetyFieldbusHealthy : BOOL;
+    StandardIoHealthy : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[// Physical feeder retracted = logical slide inside; extended = outside.
+SlideHal.ExtendedFb := GVL_PressIO._101B301A;
+SlideHal.RetractedFb := GVL_PressIO._101B301B;
+DoorHal.ExtendedFb := GVL_PressIO._101B201A;
+DoorHal.RetractedFb := GVL_PressIO._101B201B;
+PressHal.ExtendedFb := GVL_PressIO._101B202A;
+PressHal.RetractedFb := GVL_PressIO._101B202B;
+TwoHandHal.RightPressed := GVL_PressIO._101S101;
+TwoHandHal.LeftPressed := GVL_PressIO._101S102;
+PartPresentHal.Value := GVL_PressIO._101B601;
+AirPressureHal.LowPressure := GVL_PressIO._000MB085A_2;
+AirPressureHal.OperatingPressure := GVL_PressIO._000MB085A_4;
+RawEStopHealthy := GVL_PressIO._000K910A;
+PowerHal.PowerFeedback := GVL_PressIO._000K911_Y32;
+// Evaluated, fail-closed aliases supplied by TwinSAFE/external safety logic.
+SafeEStopOk := GVL_PressSafety._EStopOk;
+SafeGuardClosed := GVL_PressSafety._GuardClosed;
+SafeTwoHandActive := GVL_PressSafety._TwoHandActive;
+SafePneumaticPermit := GVL_PressSafety._PneumaticPermit;
+SafetyFieldbusHealthy := GVL_PressSafety._SafetyFieldbusHealthy;
+StandardIoHealthy := GVL_PressSafety._StandardIoHealthy;
+PartPresentHal.Quality := StandardIoHealthy;
+AirPressureHal.Quality := StandardIoHealthy;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_ClearOutputs" Id="{f625a4c1-e10f-4e07-b91a-6885860994d0}">
+      <Declaration><![CDATA[METHOD M_ClearOutputs]]></Declaration>
+      <Implementation><ST><![CDATA[GVL_PressIO._101K301A := FALSE; GVL_PressIO._101K301B := FALSE;
+GVL_PressIO._101K201A := FALSE; GVL_PressIO._101K201B := FALSE;
+GVL_PressIO._101K202A := FALSE; GVL_PressIO._101K202B := FALSE;
+GVL_PressIO._101P101 := FALSE; GVL_PressIO._101P102 := FALSE;
+GVL_PressIO._000K951_A1 := FALSE; GVL_PressIO._000K911_A1 := FALSE;]]></ST></Implementation>
+    </Method>
+    <Method Name="M_WriteOutputs" Id="{cc5ac6ba-fd45-445f-908c-0307380375bc}">
+      <Declaration><![CDATA[METHOD M_WriteOutputs
+VAR_INPUT
+    PressHal : ST_CylinderHal;
+    DoorHal : ST_CylinderHal;
+    SlideHal : ST_CylinderHal;
+    PowerHal : ST_PowerGroupHal;
+    LampsOn : BOOL;
+    ControlCircuitMappingConfirmed : BOOL;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[GVL_PressIO._101K301A := SlideHal.ExtendOut;
+GVL_PressIO._101K301B := SlideHal.RetractOut;
+GVL_PressIO._101K201A := DoorHal.ExtendOut;
+GVL_PressIO._101K201B := DoorHal.RetractOut;
+GVL_PressIO._101K202A := PressHal.ExtendOut;
+GVL_PressIO._101K202B := PressHal.RetractOut;
+GVL_PressIO._101P101 := LampsOn;
+GVL_PressIO._101P102 := LampsOn;
+IF ControlCircuitMappingConfirmed THEN
+    GVL_PressIO._000K951_A1 := PowerHal.EnableRequestOut;
+    GVL_PressIO._000K911_A1 := PowerHal.EnableRequestOut;
+ELSE
+    GVL_PressIO._000K951_A1 := FALSE;
+    GVL_PressIO._000K911_A1 := FALSE;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="M_RefreshFieldbus" Id="{69fbd59b-ae26-4b9d-9552-541f2a36a52b}">
+      <Declaration><![CDATA[METHOD M_RefreshFieldbus
+VAR_INPUT
+    StandardIoHealthy : BOOL;
+END_VAR
+VAR
+    D : ST_Diagnostic;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF _attached THEN
+    _publisher.M_SetAllHealth(Healthy := StandardIoHealthy);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 1, Value := GVL_PressIO._101B301A);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 2, Value := GVL_PressIO._101B301B);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 3, Value := GVL_PressIO._101B201A);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 4, Value := GVL_PressIO._101B201B);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 5, Value := GVL_PressIO._101B202A);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 6, Value := GVL_PressIO._101B202B);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 7, Value := GVL_PressIO._101S101);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 8, Value := GVL_PressIO._101S102);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 9, Value := GVL_PressIO._000MB085A_2);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 10, Value := GVL_PressIO._000MB085A_4);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 11, Value := GVL_PressIO._101B601);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 12, Value := GVL_PressIO._000K911_Y32);
+    _publisher.M_SetDigitalValue(NodeIndex := 3, ChannelIndex := 13, Value := GVL_PressIO._000K910A);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 1, Value := GVL_PressIO._101K301A);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 2, Value := GVL_PressIO._101K301B);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 3, Value := GVL_PressIO._101K201A);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 4, Value := GVL_PressIO._101K201B);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 5, Value := GVL_PressIO._101K202A);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 6, Value := GVL_PressIO._101K202B);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 7, Value := GVL_PressIO._101P101);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 8, Value := GVL_PressIO._101P102);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 9, Value := GVL_PressIO._000K951_A1);
+    _publisher.M_SetDigitalValue(NodeIndex := 4, ChannelIndex := 10, Value := GVL_PressIO._000K911_A1);
+    _publisher.M_BeginDiagnosticRefresh();
+    D := _unit.PressRam.Status.Diagnostic;
+    _M_ApplyCylinderDiagnostic(Diagnostic := D,
+        ExtendedTag := _unit.PressRam.OutImm.ExtendedSensorTag,
+        RetractedTag := _unit.PressRam.OutImm.RetractedSensorTag);
+    D := _unit.Door.Status.Diagnostic;
+    _M_ApplyCylinderDiagnostic(Diagnostic := D,
+        ExtendedTag := _unit.Door.OutImm.ExtendedSensorTag,
+        RetractedTag := _unit.Door.OutImm.RetractedSensorTag);
+    D := _unit.PartSlide.Status.Diagnostic;
+    _M_ApplyCylinderDiagnostic(Diagnostic := D,
+        ExtendedTag := _unit.PartSlide.OutImm.ExtendedSensorTag,
+        RetractedTag := _unit.PartSlide.OutImm.RetractedSensorTag);
+    D := _unit.AirPressureMonitor.Status.Diagnostic;
+    _publisher.M_ApplyDiagnostic(Diagnostic := D);
+    IF TO_DINT(D.ReasonCode) = PL_ModuleReasons.AIR_SWITCH_CONFLICT THEN
+        _publisher.M_ApplyDiagnosticToTag(Diagnostic := D,
+            Tag := _unit.AirPressureMonitor.OutImm.LowSensorTag);
+        _publisher.M_ApplyDiagnosticToTag(Diagnostic := D,
+            Tag := _unit.AirPressureMonitor.OutImm.OperatingSensorTag);
+    ELSE
+        ;
+    END_IF
+    _publisher.M_ApplyDiagnostic(Diagnostic := _unit.Status.Diagnostic);
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+    <Method Name="_M_ApplyCylinderDiagnostic" Id="{c5bd449b-e7c7-4d49-8755-d2386bdfef10}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ApplyCylinderDiagnostic
+VAR_INPUT
+    Diagnostic : ST_Diagnostic;
+    ExtendedTag : STRING(80);
+    RetractedTag : STRING(80);
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[_publisher.M_ApplyDiagnostic(Diagnostic := Diagnostic);
+IF TO_DINT(Diagnostic.ReasonCode) = PL_ModuleReasons.CYL_BOTH_SENSORS THEN
+    _publisher.M_ApplyDiagnosticToTag(Diagnostic := Diagnostic, Tag := ExtendedTag);
+    _publisher.M_ApplyDiagnosticToTag(Diagnostic := Diagnostic, Tag := RetractedTag);
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

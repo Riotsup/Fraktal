@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_EcFieldbusScanner" Id="{2de01126-99e6-45f0-a1dd-065dea9660c7}" SpecialFunc="None">
+    <Declaration><![CDATA[// [TC3] SKELETON — default EtherCAT implementation of I_FieldbusScanner (TC3 §10.6).
+// This is a CONTRACT SKELETON: the structure and the Tc2_EtherCAT building blocks
+// are named; bodies are TODO for the integrator, who must verify every index group,
+// port, and FB signature against the pinned Tc2_EtherCAT version (Beckhoff InfoSys).
+// See fraktal-tc3/FIELDBUS_ADS_ADAPTER.md for the full contract and the AL-state map.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK FB_EcFieldbusScanner IMPLEMENTS I_FieldbusScanner
+VAR
+    MasterNetId : STRING(23);        // EtherCAT master AmsNetId (from the master's ADS tab)
+END_VAR
+VAR
+    // Tc2_EtherCAT building blocks (uncomment when the library is referenced):
+    // _getCount   : FB_EcGetSlaveCount;         // slave count
+    // _getStates  : FB_EcGetAllSlaveStates;     // bulk AL states (INIT/PREOP/SAFEOP/OP)
+    // _getIdent   : FB_EcGetSlaveIdentity;      // vendor/product per slave
+    // _coeRead    : FB_CoeSdoReadEx;            // CoE object dictionary (names, scaling)
+    _slaveCount : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// no cyclic body — driven via the interface methods by the owning application]]></ST>
+    </Implementation>
+    <Method Name="Scan" Id="{eeaa6da4-e872-4583-92a1-23c5e87db9cb}">
+      <Declaration><![CDATA[METHOD Scan : INT
+VAR_IN_OUT
+    Data : ST_FieldbusTopology;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator):
+//  1) _getCount(sNetId := MasterNetId, ...) -> _slaveCount  (0 => master down => RETURN 0)
+//  2) _getStates(...) -> per-slave AL state word; map with _M_MapState() into Nodes[i].State
+//  3) _getIdent(...) per slave -> Nodes[i].TypeId / Address; set ParentIdx from topology order
+//  4) per slave, discover channels: CoE object dictionary (_coeRead of 0x6000/0x7000 ranges)
+//     OR the configured PDO mapping -> fill Nodes[i].Channels[].Name/Dir/Kind/Unit
+//  Verify index groups/ports against Tc2_EtherCAT InfoSys before trusting any value.
+Scan := 0;   // skeleton: returns 'master down' until implemented]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="RefreshValues" Id="{56b37fa3-ea08-4b4d-a6a5-8e1cad4b4333}">
+      <Declaration><![CDATA[METHOD RefreshValues : BOOL
+VAR_IN_OUT
+    Data : ST_FieldbusTopology;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// TODO(integrator): copy live values from the PLC PROCESS IMAGE (the variables the
+// terminals are linked to) into Nodes[i].Channels[j].BoolValue/AnalogValue/Quality.
+// PREFERRED: the application links each channel to the HAL struct it already owns
+// (§3.6) and sets a pointer/reference here — no raw process-image address math.
+// Analog scaling (raw INT -> REAL + Unit) comes from the ESI/TMC or the CM's ParCfg.
+RefreshValues := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ForceChannel" Id="{ed28b8fb-2806-4cee-9ead-75713045a74a}">
+      <Declaration><![CDATA[METHOD ForceChannel : BOOL
+VAR_INPUT
+    ChannelPath : STRING(255);
+    Force       : BOOL;
+    BoolValue   : BOOL;
+    AnalogRaw   : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// OUTPUT-ONLY force (Core §10.5.1 rule): write the MAPPED OUTPUT VARIABLE for the
+// channel. Reject inputs and unknown channels. This is NOT a raw process-image
+// force and cannot touch inputs or safety I/O. Caller has ALREADY checked
+// §7.6/§7.7 and will log the §8.3 event; do NOT re-gate here.
+// TODO(integrator):
+//  1) resolve ChannelPath -> the owning module's HAL output field (via the same
+//     reference table RefreshValues uses); if not found OR it is an input -> FALSE.
+//  2) Force=TRUE  -> latch BoolValue/AnalogRaw onto that output each scan while held;
+//     Force=FALSE -> release (module resumes driving it).
+// Because the write goes through the application, a RUNNING module reasserts its
+// own output — a force is only effective when the module is stopped/in MANUAL,
+// which is the intended safety behaviour (the force cannot override active logic).
+ForceChannel := FALSE;   // skeleton: rejects until implemented]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MapState" Id="{a160dc4d-cdb6-4e75-a6b6-b38f0b3a574f}">
+      <Declaration><![CDATA[// EtherCAT AL-state word -> neutral E_NodeState (Core §10.5.1). The AL-state low
+// nibble is the state; bit 0x10 is the error/fault flag. VERIFY constants (InfoSys).
+METHOD PROTECTED _M_MapState : E_NodeState
+VAR_INPUT
+    AlState : WORD;
+END_VAR
+VAR
+    stateNibble : WORD;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (AlState AND 16#0010) <> 0 THEN
+    _M_MapState := E_NodeState.FAULT;               // AL error bit set
+    RETURN;
+END_IF
+stateNibble := AlState AND 16#000F;
+CASE stateNibble OF
+    16#01: _M_MapState := E_NodeState.INIT;
+    16#02: _M_MapState := E_NodeState.PREOP;
+    16#04: _M_MapState := E_NodeState.SAFEOP;
+    16#08: _M_MapState := E_NodeState.OPERATIONAL;
+ELSE
+    _M_MapState := E_NodeState.OFFLINE;             // incl. BOOTSTRAP(0x03)/no-response
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

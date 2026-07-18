@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_AsciiDeviceCM" Id="{fbdfe34e-2b13-471d-9c7e-f6c09e1b07f2}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §3.15.1a — CM base for ASCII request/response devices over I_ByteChannel
+// (vision sensors, code readers, gauges). One-outstanding-request state machine:
+// SendRequest -> await terminated response -> _M_OnResponse hook; silence -> fault
+// 10402. Written ONCE against the neutral seam: porting = swap the channel (O4/O8).
+// Reconnect: bounded retry via the channel; link state published for Annex D facet.
+{attribute 'OPC.UA.DA' := '1'}
+FUNCTION_BLOCK ABSTRACT FB_AsciiDeviceCM EXTENDS FB_ControlModuleBase
+VAR
+    Host        : STRING(80);          // §3.8 config (per deployment)
+    Port        : UINT;
+    Terminator  : STRING(2) := '$R';   // CR default; device profile may override
+    RespTimeout : TIME := T#2S;
+    LinkState   : E_ByteChannelState;  // published (Annex D link facet)
+    LastResponse: STRING(255);         // published (diagnosis)
+END_VAR
+VAR
+    _chan     : I_ByteChannel;
+    _rx       : STRING(255);
+    _pending  : BOOL;                  // one outstanding request
+    _tResp    : TON;
+    _tRetry   : TON;
+    _retryMs  : TIME := T#500MS;       // bounded backoff (doubles to 10s)
+    _openTried : BOOL;                 // backoff spaces RE-tries; the first Open is immediate
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;  // driven via Cyclic (base) -> OnCyclic below]]></ST>
+    </Implementation>
+    <Method Name="SetupDevice" Id="{2ab03770-7cce-43e3-a8b7-260bc7ab0b22}">
+      <Declaration><![CDATA[// wire the transport + endpoint. Call from the profile's Setup after _M_SetName.
+METHOD SetupDevice : BOOL
+VAR_INPUT
+    Chan : I_ByteChannel;
+    DevHost : STRING(80);
+    DevPort : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF Chan = 0 OR DevHost = '' THEN
+    _M_FaultN(PL_TcpDevReasons.DEV_CFG_INVALID, 'std.error.deviceConnectionNotConfigured');
+    SetupDevice := FALSE;
+    RETURN;
+END_IF
+_chan := Chan;
+Host := DevHost;
+Port := DevPort;
+SetupDevice := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="OnCyclic" Id="{641940cd-41bc-490f-a5b9-7fd36e427088}">
+      <Declaration><![CDATA[// channel management + RX framing. Profiles override _M_OnResponse, not this.
+METHOD PROTECTED OnCyclic : DINT
+VAR
+    pos : INT;
+    resp : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[OnCyclic := SUPER^.OnCyclic();
+IF _chan = 0 THEN
+    RETURN;
+END_IF
+_chan.Tick();
+LinkState := _chan.State();
+CASE LinkState OF
+    E_ByteChannelState.CLOSED:
+        IF NOT _openTried THEN
+            _openTried := TRUE;                    // first sight of CLOSED: connect NOW
+            _chan.Open(Host := Host, Port := Port);
+            LinkState := _chan.State();            // a synchronous transport is OPEN this scan
+        ELSE
+            _tRetry(IN := TRUE, PT := _retryMs);   // failed before: bounded backoff (§3.15.2 spirit)
+            IF _tRetry.Q THEN
+                _tRetry(IN := FALSE);
+                _chan.Open(Host := Host, Port := Port);
+                LinkState := _chan.State();
+                IF _retryMs < T#10S THEN
+                    _retryMs := _retryMs * 2;
+                END_IF
+            END_IF
+        END_IF
+    E_ByteChannelState.OPEN:
+        _openTried := FALSE;
+        _retryMs := T#500MS;
+        _chan.Poll(Buffer := _rx);
+        pos := FIND(_rx, Terminator);
+        IF pos > 0 THEN
+            resp := LEFT(_rx, pos - 1);
+            _rx := DELETE(_rx, pos + LEN(Terminator) - 1, 1);
+            _pending := FALSE;
+            _tResp(IN := FALSE);
+            LastResponse := resp;
+            _M_OnResponse(Response := resp);
+        ELSIF LEN(_rx) >= 250 THEN
+            _rx := '';
+            _M_FaultN(PL_TcpDevReasons.DEV_RX_OVERFLOW, 'std.error.deviceResponseOverflow');
+        END_IF
+    E_ByteChannelState.FAULT:
+        IF _pending THEN
+            _pending := FALSE;
+            _tResp(IN := FALSE);
+        END_IF
+        _M_FaultN(PL_TcpDevReasons.DEV_CHANNEL_FAULT, 'std.error.transportChannelFault');
+        _chan.Close();
+ELSE
+    _M_FaultN(PL_TcpDevReasons.DEV_CHANNEL_FAULT, 'std.error.byteChannelStateInvalid');
+    _chan.Close();
+END_CASE
+// response timeout watch
+_tResp(IN := _pending, PT := RespTimeout);
+IF _tResp.Q THEN
+    _pending := FALSE;
+    _tResp(IN := FALSE);
+    _M_FaultN(PL_TcpDevReasons.DEV_RESP_TIMEOUT, 'std.error.deviceResponseTimeout');
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SendRequest" Id="{762283fc-05d7-4631-9d26-11346d11feba}">
+      <Declaration><![CDATA[// issue one request (terminator appended). FALSE if not connected or one pending.
+METHOD SendRequest : BOOL
+VAR_INPUT
+    Text : STRING(250);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// live channel state: the cached LinkState is one scan old and would reject a
+// request issued in the same scan the transport opened.
+IF _chan = 0 OR (_chan.State() <> E_ByteChannelState.OPEN) THEN
+    _M_FaultN(PL_TcpDevReasons.DEV_NOT_CONNECTED, 'std.error.deviceNotConnected');
+    SendRequest := FALSE;
+    RETURN;
+END_IF
+IF _pending THEN
+    SendRequest := FALSE;              // one-outstanding-request contract
+    RETURN;
+END_IF
+_pending := _chan.Send(Text := CONCAT(Text, Terminator));
+SendRequest := _pending;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_OnResponse" Id="{458bd92a-0a1d-42f4-9a5c-8b7706bcaf76}">
+      <Declaration><![CDATA[// profile hook: parse one terminated response. Raise DEV_PROTOCOL on garbage.
+METHOD PROTECTED _M_OnResponse
+VAR_INPUT
+    Response : STRING(255);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

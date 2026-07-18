@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <Itf Name="I_FieldbusScanner" Id="{6a5f0942-5899-403d-81c1-0747200a061c}">
+    <Declaration><![CDATA[// Core §10.5.1 / TC3 §10.6 — the seam an integrator implements to populate the
+// fieldbus topology model from a real master's diagnostics. The application owns
+// the flat node table; the scanner fills it each refresh and answers force writes.
+// A default EtherCAT implementation is FB_EcFieldbusScanner (skeleton). Other buses
+// (PROFINET, EtherNet/IP gateways) implement this same interface (O4/O8).
+INTERFACE I_FieldbusScanner]]></Declaration>
+    <Method Name="Scan" Id="{deaa3248-94d7-474b-b785-bb11f970bd8a}">
+      <Declaration><![CDATA[// Rebuild the node table from the master; returns node count (0 = master down).
+// Fills Nodes[1..count] (ParentIdx/State/Channels). Called at a slow cadence
+// (e.g. 200 ms) — topology changes rarely; live values refresh separately.
+METHOD Scan : INT
+VAR_IN_OUT
+    Data : ST_FieldbusTopology;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="RefreshValues" Id="{794e8337-68ec-4c26-841b-8173ede6683f}">
+      <Declaration><![CDATA[// Update only the live channel values/quality of an already-scanned table (fast
+// cadence, every scan). Keeps topology stable while values move.
+METHOD RefreshValues : BOOL
+VAR_IN_OUT
+    Data : ST_FieldbusTopology;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="ForceChannel" Id="{a83b30d2-7046-4bbc-a28f-e6cab4d9f351}">
+      <Declaration><![CDATA[// Apply/clear an OUTPUT force on one channel (Core §10.5.1, output-only rule).
+// MUST already be authorized by the caller (§7.6/§7.7); the scanner only performs
+// the write and returns success (FALSE if the channel is an INPUT or unknown).
+// Writes the mapped OUTPUT variable through the application — never a raw
+// process-image force, never an input, never safety I/O (those are unreachable
+// here by construction). Every call is logged by the caller (§8.3).
+METHOD ForceChannel : BOOL
+VAR_INPUT
+    ChannelPath : STRING(255);
+    Force       : BOOL;     // TRUE = hold the value, FALSE = release
+    BoolValue   : BOOL;     // digital output
+    AnalogRaw   : DINT;     // analog output (raw)
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

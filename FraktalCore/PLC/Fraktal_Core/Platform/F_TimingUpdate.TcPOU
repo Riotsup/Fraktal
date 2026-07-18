@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="F_TimingUpdate" Id="{a575afa5-869d-45b5-b6c3-a4770ab29cc9}" SpecialFunc="None">
+    <Declaration><![CDATA[// Core §8.11.4 — fold one duration into a timing row: Count/Last/Min/Max and a
+// running mean (avg += (x - avg)/n). Pure function so the math is testable exactly.
+FUNCTION F_TimingUpdate : BOOL
+VAR_IN_OUT
+    Row : ST_TimingRow;
+END_VAR
+VAR_INPUT
+    DurMs : DWORD;    // wrap-safe monotonic difference (TC3 §8.11)
+END_VAR
+VAR
+    d, avg : DINT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Row.Count := Row.Count + 1;
+Row.Last  := DWORD_TO_TIME(DurMs);
+IF (Row.Count = 1) OR (Row.Last < Row.Minimum) THEN
+    Row.Minimum := Row.Last;
+END_IF
+IF Row.Last > Row.Maximum THEN
+    Row.Maximum := Row.Last;
+END_IF
+d   := DWORD_TO_DINT(DurMs);
+avg := TIME_TO_DINT(Row.Avg);
+avg := avg + ((d - avg) / UDINT_TO_DINT(Row.Count));
+Row.Avg := DINT_TO_TIME(avg);
+F_TimingUpdate := TRUE;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

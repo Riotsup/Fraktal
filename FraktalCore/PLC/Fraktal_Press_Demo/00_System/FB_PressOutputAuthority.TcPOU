@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_PressOutputAuthority" Id="{01fa2082-c41e-42bc-a3bc-67398cfe717b}" SpecialFunc="None">
+    <Declaration><![CDATA[// Final ordinary-PLC functional withdrawal layer for the demo. This is defense
+// in depth, not a certified safety function; TwinSAFE remains final authority.
+FUNCTION_BLOCK FB_PressOutputAuthority]]></Declaration>
+    <Implementation><ST><![CDATA[;]]></ST></Implementation>
+    <Method Name="M_Apply" Id="{b9d51e6b-cc43-450d-b6af-cab251d2146f}">
+      <Declaration><![CDATA[METHOD M_Apply
+VAR_INPUT
+    PowerFeedback : BOOL;
+    SafePneumaticPermit : BOOL;
+    StandardIoHealthy : BOOL;
+    HazardousRamPermit : BOOL;
+END_VAR
+VAR_IN_OUT
+    PressHal : ST_CylinderHal;
+    DoorHal : ST_CylinderHal;
+    SlideHal : ST_CylinderHal;
+END_VAR]]></Declaration>
+      <Implementation><ST><![CDATA[IF NOT PowerFeedback OR NOT SafePneumaticPermit OR NOT StandardIoHealthy THEN
+    PressHal.ExtendOut := FALSE; PressHal.RetractOut := FALSE;
+    DoorHal.ExtendOut := FALSE; DoorHal.RetractOut := FALSE;
+    SlideHal.ExtendOut := FALSE; SlideHal.RetractOut := FALSE;
+ELSIF NOT HazardousRamPermit THEN
+    // Ram-up and assessed low-risk loading actuators remain available.
+    PressHal.ExtendOut := FALSE;
+ELSE
+    ;
+END_IF]]></ST></Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
